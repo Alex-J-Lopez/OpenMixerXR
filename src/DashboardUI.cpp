@@ -367,10 +367,12 @@ void DashboardUI::buildUI() {
         const bool selected   = (m_selectedBox == i);
         const bool inMoveMode = m_grab->isMoveMode() && m_grab->boxIndex() == i;
         if (inMoveMode) {
-            if (m_grab->isGrabbing())
-                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.3f, 1.0f), u8"\u25CF");  // filled circle = grabbing
+            if (m_grab->isResizing())
+                ImGui::TextColored(ImVec4(0.2f, 0.9f, 1.0f, 1.0f), u8"\u25CF");  // cyan = resizing
+            else if (m_grab->isGrabbing())
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.3f, 1.0f), u8"\u25CF");  // green = grabbing
             else
-                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), u8"\u25CB");  // open circle = armed
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), u8"\u25CB");  // yellow = armed
             ImGui::SameLine();
         }
         if (ImGui::Selectable(box->name.empty() ? box->id.c_str() : box->name.c_str(),
@@ -487,8 +489,10 @@ void DashboardUI::buildUI() {
 
         if (modeForThis) {
             // Status indicator.
-            if (m_grab->isGrabbing())
-                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.3f, 1.0f), "GRABBING");
+            if (m_grab->isResizing())
+                ImGui::TextColored(ImVec4(0.2f, 0.9f, 1.0f, 1.0f), "GRABBING + RESIZING");
+            else if (m_grab->isGrabbing())
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.3f, 1.0f), "GRABBING  (left grip to resize)");
             else
                 ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "MOVE MODE ON  (squeeze grip to grab)");
             if (ImGui::Button("Disable Move Mode"))
@@ -510,7 +514,7 @@ void DashboardUI::buildUI() {
                 ImGui::TextDisabled("(move mode active for another box)");
             } else {
                 ImGui::SameLine();
-                ImGui::TextDisabled("grip = grab + rotate, release = drop");
+                ImGui::TextDisabled("R-grip=grab+rotate  L-grip=resize");
             }
         }
     } else {
