@@ -34,12 +34,19 @@ set(OPENMIXER_SOURCES
     src/main.cpp
     src/D3D11Backend.cpp
     src/PassthroughBox.cpp
+    src/ChromaRenderer.cpp
+    src/DeviceTracker.cpp
+    src/OverlayManager.cpp
 )
 set(OPENMIXER_HEADERS
     src/Config.h
     src/Logger.h
+    src/MathHelpers.h
     src/D3D11Backend.h
     src/PassthroughBox.h
+    src/ChromaRenderer.h
+    src/DeviceTracker.h
+    src/OverlayManager.h
 )
 
 add_executable(OpenMixerVR ${OPENMIXER_SOURCES} ${OPENMIXER_HEADERS})
@@ -78,3 +85,23 @@ add_custom_command(TARGET OpenMixerVR POST_BUILD
         "$<TARGET_FILE_DIR:OpenMixerVR>/dashboard_icon.png"
     COMMENT "Copying OpenMixerVR resources to output directory"
 )
+
+# ── Unit tests ────────────────────────────────────────────────────────────────
+# box_transform_test exercises pure math (no VR runtime, no D3D11 required).
+add_executable(box_transform_test tests/box_transform_test.cpp)
+
+target_include_directories(box_transform_test PRIVATE src)
+
+target_link_libraries(box_transform_test PRIVATE
+    openvr_api64    # needed for vr::HmdMatrix34_t type only; no runtime called
+    glm::glm
+)
+
+target_compile_definitions(box_transform_test PRIVATE
+    OPENVR_BUILD_STATIC
+    $<$<EQUAL:${CMAKE_SIZEOF_VOID_P},8>:WIN64>
+)
+
+if(MSVC)
+    target_compile_options(box_transform_test PRIVATE /W4 /utf-8 /wd4201)
+endif()
