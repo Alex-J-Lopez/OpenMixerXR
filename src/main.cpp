@@ -1,8 +1,7 @@
-// Threading model (Phase 2 decision):
-//   Single main thread only. All VR API calls, D3D11 operations, and overlay updates
-//   happen sequentially in the loop below at ~90 Hz. This avoids synchronisation overhead
-//   while we have no dashboard UI to drive concurrently. Phase 3 (DashboardUI) will
-//   evaluate whether a separate Dashboard Thread is needed — see phase-3-dashboard-ui.md.
+// Threading model (Phase 2 decision, reconfirmed for Phase 3):
+//   Single main thread only. VR events, D3D11 context calls, ImGui rendering, and overlay
+//   updates are all sequential. ImGui renders only when the dashboard is active (§6.1).
+//   A second thread would require a deferred D3D11 context — deferred to Phase 5 if needed.
 
 #include <windows.h>
 #include <dxgi1_2.h>
@@ -21,6 +20,7 @@
 #include "OverlayManager.h"
 #include "DeviceTracker.h"
 #include "PassthroughBox.h"
+#include "DashboardUI.h"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -132,7 +132,7 @@ static std::array<PassthroughBox, 3> makeDefaultBoxes() {
 
 int main() {
     Logger::init();
-    LOG_INFO("OpenMixer VR starting (Phase 2)");
+    LOG_INFO("OpenMixer VR starting (Phase 3)");
 
     const std::string manifestPath =
         (std::filesystem::path(executableDir()) / "manifest.vrmanifest").string();
@@ -160,6 +160,7 @@ int main() {
         vr::VR_Shutdown();
         return 1;
     }
+    overlayManager.reserveBoxes(64);   // prevent reallocation while UI holds pointers
 
     for (const auto& box : makeDefaultBoxes()) {
         if (!overlayManager.addBox(box)) {
@@ -170,8 +171,17 @@ int main() {
     }
     LOG_INFO("{} boxes registered", overlayManager.boxCount());
 
-    // ── 4. Main loop ──────────────────────────────────────────────────────────
+    // ── 4. Initialise DashboardUI ──────────────────────────────────────────────
     DeviceTracker tracker;
+    DashboardUI   dashboardUI;
+    if (!dashboardUI.init(d3d.getDevice(), d3d.getContext(), overlayManager, tracker)) {
+        LOG_ERROR("DashboardUI init failed");
+        overlayManager.shutdown();
+        vr::VR_Shutdown();
+        return 1;
+    }
+
+    // ── 5. Main loop ──────────────────────────────────────────────────────────
     bool running = true;
 
     while (running) {
@@ -180,6 +190,7 @@ int main() {
         if (!vr::VRSystem() || !vr::VROverlay()) {
             LOG_WARN("VR interfaces lost — attempting reconnect");
             overlayManager.closeOverlays();
+            dashboardUI.closeOverlays();
             vr::VR_Shutdown();
             vrSystem = nullptr;
 
@@ -205,12 +216,17 @@ int main() {
                 LOG_ERROR("reopenOverlays failed after reconnect — exiting");
                 break;
             }
+            if (!dashboardUI.reopenOverlays()) {
+                LOG_ERROR("DashboardUI reopenOverlays failed after reconnect — exiting");
+                break;
+            }
         }
 
         // Poll VR events.
         vr::VREvent_t event;
         while (vr::VRSystem()->PollNextEvent(&event, sizeof(event))) {
             overlayManager.handleEvent(event);
+            dashboardUI.handleSystemEvent(event);
             if (event.eventType == vr::VREvent_Quit) {
                 LOG_INFO("VREvent_Quit — shutting down");
                 vr::VRSystem()->AcknowledgeQuit_Exiting();
@@ -219,15 +235,18 @@ int main() {
         }
         if (!running) break;
 
-        // Update HMD pose then run per-box frame update.
+        // Update HMD pose then run per-box frame update and dashboard render.
         tracker.update(vrSystem);
         overlayManager.frame(tracker.getHmdPosition());
+        dashboardUI.pollInput();
+        dashboardUI.render();
 
         std::this_thread::sleep_for(std::chrono::milliseconds(11));   // ~90 Hz
     }
 
-    // ── 5. Clean shutdown ─────────────────────────────────────────────────────
-    overlayManager.shutdown();   // destroys all overlay handles before VR_Shutdown
+    // ── 6. Clean shutdown ─────────────────────────────────────────────────────
+    dashboardUI.shutdown();          // destroys both dashboard handles
+    overlayManager.shutdown();       // destroys all world overlay handles before VR_Shutdown
     d3d.shutdown();
     vr::VR_Shutdown();
     LOG_INFO("Shutdown complete");

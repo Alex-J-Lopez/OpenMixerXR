@@ -29,6 +29,18 @@ if(TARGET glm AND NOT TARGET glm::glm)
     add_library(glm::glm ALIAS glm)
 endif()
 
+# ── ImGui (Dear ImGui, DX11 backend — no Win32 platform backend needed) ────────
+# We compile the core + DX11 renderer directly; platform input comes from
+# SteamVR laser pointer events mapped to ImGui IO in DashboardUI.
+set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/third_party/imgui)
+set(IMGUI_SOURCES
+    ${IMGUI_DIR}/imgui.cpp
+    ${IMGUI_DIR}/imgui_draw.cpp
+    ${IMGUI_DIR}/imgui_tables.cpp
+    ${IMGUI_DIR}/imgui_widgets.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_dx11.cpp
+)
+
 # ── Application sources ───────────────────────────────────────────────────────
 set(OPENMIXER_SOURCES
     src/main.cpp
@@ -37,6 +49,8 @@ set(OPENMIXER_SOURCES
     src/ChromaRenderer.cpp
     src/DeviceTracker.cpp
     src/OverlayManager.cpp
+    src/DashboardUI.cpp
+    ${IMGUI_SOURCES}
 )
 set(OPENMIXER_HEADERS
     src/Config.h
@@ -47,11 +61,16 @@ set(OPENMIXER_HEADERS
     src/ChromaRenderer.h
     src/DeviceTracker.h
     src/OverlayManager.h
+    src/DashboardUI.h
 )
 
 add_executable(OpenMixerVR ${OPENMIXER_SOURCES} ${OPENMIXER_HEADERS})
 
-target_include_directories(OpenMixerVR PRIVATE src)
+target_include_directories(OpenMixerVR PRIVATE
+    src
+    ${IMGUI_DIR}
+    ${IMGUI_DIR}/backends
+)
 
 target_link_libraries(OpenMixerVR PRIVATE
     openvr_api64                # OpenVR static (Win64 target name)

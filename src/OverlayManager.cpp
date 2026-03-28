@@ -170,8 +170,7 @@ void OverlayManager::closeOverlays() {
     LOG_INFO("OverlayManager: {} overlay handles closed for reconnect", m_entries.size());
 }
 
-bool OverlayManager::reopenOverlays() {
-    for (auto& e : m_entries) {
+bool OverlayManager::reopenOverlays() {    for (auto& e : m_entries) {
         if (!createOverlayHandle(e))
             return false;
 
@@ -190,4 +189,12 @@ bool OverlayManager::reopenOverlays() {
     }
     LOG_INFO("OverlayManager: {} overlays reopened", m_entries.size());
     return true;
+}
+
+PassthroughBox* OverlayManager::boxAt(std::size_t i) {
+    return i < m_entries.size() ? &m_entries[i].box : nullptr;
+}
+
+const PassthroughBox* OverlayManager::boxAt(std::size_t i) const {
+    return i < m_entries.size() ? &m_entries[i].box : nullptr;
 }

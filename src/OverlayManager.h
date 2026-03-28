@@ -59,6 +59,15 @@ public:
 
     std::size_t boxCount() const { return m_entries.size(); }
 
+    // Direct mutable access to box data by index for DashboardUI.
+    // Pointer is valid while no addBox/removeBox is called.
+    // Call reserveBoxes() at startup to prevent reallocation invalidating pointers.
+    PassthroughBox*       boxAt(std::size_t i);
+    const PassthroughBox* boxAt(std::size_t i) const;
+
+    // Pre-allocate internal storage so addBox never reallocates (Phase 2 finding #9).
+    void reserveBoxes(std::size_t n) { m_entries.reserve(n); }
+
 private:
     struct Entry {
         PassthroughBox        box;
