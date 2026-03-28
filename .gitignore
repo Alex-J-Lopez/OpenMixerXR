@@ -39,3 +39,27 @@
 
 # debug information files
 *.dwo
+
+# Visual Studio / MSBuild
+.vs/
+
+# User-specific files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.rsuser
+
+# Build results
+[Bb]in/
+[Oo]bj/
+
+# Visual C++ cache / database files
+*.VC.db
+*.VC.opendb
+ipch/
+
+# Test results
+TestResults/
+
+
