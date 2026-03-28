@@ -364,7 +364,15 @@ void DashboardUI::buildUI() {
         ImGui::PushID(i);
         ImGui::Checkbox("##vis", &box->visible);   // FR-08: visibility toggle
         ImGui::SameLine();
-        const bool selected = (m_selectedBox == i);
+        const bool selected   = (m_selectedBox == i);
+        const bool inMoveMode = m_grab->isMoveMode() && m_grab->boxIndex() == i;
+        if (inMoveMode) {
+            if (m_grab->isGrabbing())
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.3f, 1.0f), u8"\u25CF");  // filled circle = grabbing
+            else
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), u8"\u25CB");  // open circle = armed
+            ImGui::SameLine();
+        }
         if (ImGui::Selectable(box->name.empty() ? box->id.c_str() : box->name.c_str(),
                                selected, ImGuiSelectableFlags_None))
             m_selectedBox = i;
@@ -468,37 +476,42 @@ void DashboardUI::buildUI() {
 
         ImGui::Separator();
 
-        // ── Controller grab (Phase 3.5) ───────────────────────────────────────
-        // "Arm" arms the grab for this box; the box latches to the right
-        // controller on the next grip press and follows it until grip release.
+        // ── Move mode (Phase 3.5) ─────────────────────────────────────────────
+        // Move mode stays on until explicitly disabled, allowing repeated
+        // grip-to-grab cycles without returning to the dashboard each time.
+        // Each grip press: latch position + rotation delta.
+        // Grip release: box drops at new transform, auto re-arms for next grip.
         const bool rightTracked  = m_tracker->isRightControllerTracked();
-        const bool grabForThis   = (m_grab->isArmed() || m_grab->isActive())
-                                    && m_grab->boxIndex() == m_selectedBox;
-        const bool grabElsewhere = (m_grab->isArmed() || m_grab->isActive())
-                                    && !grabForThis;
+        const bool modeForThis   = m_grab->isMoveMode() && m_grab->boxIndex() == m_selectedBox;
+        const bool modeElsewhere = m_grab->isMoveMode() && !modeForThis;
 
-        if (!rightTracked || grabElsewhere) ImGui::BeginDisabled();
-        if (ImGui::Button("Grab with right controller")) {
-            if (!grabForThis)
-                m_grab->arm(m_selectedBox);
-        }
-        if (!rightTracked || grabElsewhere) ImGui::EndDisabled();
-
-        if (!rightTracked) {
-            ImGui::SameLine();
-            ImGui::TextDisabled("(controller not tracked)");
-        } else if (grabElsewhere) {
-            ImGui::SameLine();
-            ImGui::TextDisabled("(grabbing another box)");
-        }
-
-        if (grabForThis) {
-            ImGui::SameLine();
-            if (m_grab->isActive())
-                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "GRABBING");
+        if (modeForThis) {
+            // Status indicator.
+            if (m_grab->isGrabbing())
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.3f, 1.0f), "GRABBING");
             else
-                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "ARMED — squeeze grip");
-            if (ImGui::Button("Release")) m_grab->cancel();
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "MOVE MODE ON  (squeeze grip to grab)");
+            if (ImGui::Button("Disable Move Mode"))
+                m_grab->disableMoveMode();
+        } else {
+            // Enable button — disabled when another box is in move mode or
+            // the right controller isn't tracked.
+            const bool canEnable = rightTracked && !modeElsewhere;
+            if (!canEnable) ImGui::BeginDisabled();
+            if (ImGui::Button("Enable Move Mode"))
+                m_grab->enableMoveMode(m_selectedBox);
+            if (!canEnable) ImGui::EndDisabled();
+
+            if (!rightTracked) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("(controller not tracked)");
+            } else if (modeElsewhere) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("(move mode active for another box)");
+            } else {
+                ImGui::SameLine();
+                ImGui::TextDisabled("grip = grab + rotate, release = drop");
+            }
         }
     } else {
         ImGui::TextDisabled("No box selected");

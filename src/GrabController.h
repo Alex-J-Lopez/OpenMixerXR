@@ -1,42 +1,58 @@
 #pragma once
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 class DeviceTracker;
 class OverlayManager;
 
-// Manages the "arm → grip-to-latch → drag → release" workflow for physically
-// repositioning a world-space box with the right controller (Phase 3.5).
+// Manages physical repositioning of a world-space box with the right controller.
 //
-// State machine:
-//   idle   → arm(idx)     → armed
-//   armed  → grip pressed → active  (offset latched: boxPos - ctrlPos)
-//   active → grip released → idle   (box stays at new world position)
-//   armed or active → cancel()  → idle
+// State machine (Phase 3.5 revised):
 //
-// Only translation is applied; rotation remains under dashboard slider control.
-// GrabController::tick() is called from main.cpp after DeviceTracker::update()
-// and before OverlayManager::frame(), so the updated position is read
-// immediately that same frame.
+//   Move mode OFF → enableMoveMode(idx) → Move mode ON (idle)
+//   Move mode ON idle  → grip pressed  → Grabbing (latch position + rotation)
+//   Grabbing           → each frame    → box follows controller (pos + rot delta)
+//   Grabbing           → grip released → Move mode ON (idle) — auto re-arms
+//   Move mode ON (any) → disableMoveMode() → Move mode OFF
+//
+// The user enables move mode once from the dashboard, then grips as many times
+// as needed to reposition the box, and finally disables from the dashboard.
+//
+// Both position AND rotation are applied during a grab:
+//   - Position:  newPos = ctrlPos + (boxPos - ctrlPos at latch)
+//   - Rotation:  newRot = (ctrlRot * inverse(ctrlRot_at_latch)) * boxRot_at_latch
+//
+// tick() must be called after DeviceTracker::update() and before
+// OverlayManager::frame() so the updated transform is applied that same frame.
 class GrabController {
 public:
-    // Arm the grab for the given box index.
-    // The grab does not latch until the right controller grip button is pressed.
-    void arm(int boxIndex);
+    // Enable persistent move mode for the given box index.
+    // The box will not move until the user squeezes the right grip.
+    void enableMoveMode(int boxIndex);
 
-    // Abort (armed or active) — box stays at its current world position.
-    void cancel();
+    // Disable move mode — box stays at its current transform.
+    void disableMoveMode();
 
-    // Per-frame update. Call after DeviceTracker::update().
+    // Per-frame update. Handles latch, position+rotation update, and release.
     void tick(const DeviceTracker& tracker, OverlayManager& mgr);
 
-    bool isArmed()  const { return m_armed; }
-    bool isActive() const { return m_active; }  // grip currently latched
-    int  boxIndex() const { return m_boxIndex; }
+    // True while move mode is on (idle or grabbing).
+    bool isMoveMode()   const { return m_moveMode; }
+
+    // True while the grip is physically held and the box is being dragged.
+    bool isGrabbing()   const { return m_grabbing; }
+
+    // Index of the box currently in move mode (-1 if none).
+    int  boxIndex()     const { return m_boxIndex; }
 
 private:
-    bool      m_armed       = false;
-    bool      m_active      = false;
+    bool      m_moveMode    = false;
+    bool      m_grabbing    = false;   // grip currently latched
     int       m_boxIndex    = -1;
-    bool      m_wasGripping = false;  // for leading-edge detection
-    glm::vec3 m_offset      = {};     // boxPos - ctrlPos at latch time
+    bool      m_wasGripping = false;   // for leading/trailing edge detection
+
+    // State captured at latch time (leading edge of grip press).
+    glm::vec3 m_posOffset    = {};             // boxPos - ctrlPos
+    glm::quat m_boxRotStart  = glm::quat(1.f, 0.f, 0.f, 0.f);
+    glm::quat m_ctrlRotStart = glm::quat(1.f, 0.f, 0.f, 0.f);
 };
