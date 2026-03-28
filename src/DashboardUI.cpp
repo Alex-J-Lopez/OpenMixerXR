@@ -354,7 +354,7 @@ void DashboardUI::buildUI() {
 
     ImGui::Text("OpenMixer XR");
     ImGui::SameLine();
-    ImGui::TextDisabled("  Phase 3.5");
+    ImGui::TextDisabled("  Phase 4.5");
     ImGui::Separator();
 
     const float leftW  = 240.0f;
@@ -403,6 +403,8 @@ void DashboardUI::buildUI() {
     ImGui::SetCursorPosY(addBtnY);
     ImGui::Separator();
 
+    const bool atBoxLimit = m_overlayMgr->boxCount() >= OverlayManager::MAX_BOXES;
+    if (atBoxLimit) ImGui::BeginDisabled();
     if (ImGui::Button("+ Add")) {
         // FR-01: new box spawned 1m in front of HMD, or at default pos if not tracked.
         PassthroughBox nb;
@@ -417,8 +419,13 @@ void DashboardUI::buildUI() {
             const glm::vec3 sp      = hmdPos + forward * 1.0f;
             nb.posX = sp.x; nb.posY = sp.y; nb.posZ = sp.z;
         }
-        m_overlayMgr->addBox(nb);
-        m_selectedBox = nBoxes;   // auto-select the new box
+        if (m_overlayMgr->addBox(nb))
+            m_selectedBox = nBoxes;   // auto-select the new box
+    }
+    if (atBoxLimit) {
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.f, 0.4f, 0.4f, 1.f), "limit (%zu)", OverlayManager::MAX_BOXES);
     }
     ImGui::SameLine();
     if (ImGui::Button("- Delete") && nBoxes > 0) {
@@ -462,6 +469,11 @@ void DashboardUI::buildUI() {
         // FR-05: scale (5 cm per click).
         StepFloat("width",  "Width",  &sel->scaleWidth,  0.05f, 0.05f, 5.f, "%.2f m");
         StepFloat("height", "Height", &sel->scaleHeight, 0.05f, 0.05f, 5.f, "%.2f m");
+        StepFloat("depth",  "Depth",  &sel->scaleDepth,  0.05f, 0.00f, 5.f, "%.2f m");
+        if (sel->scaleDepth < OverlayManager::MIN_DEPTH) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("(flat)");
+        }
 
         ImGui::Separator();
 

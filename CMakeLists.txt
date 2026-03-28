@@ -154,3 +154,35 @@ target_compile_definitions(layout_serialization_test PRIVATE
 if(MSVC)
     target_compile_options(layout_serialization_test PRIVATE /W4 /utf-8 /wd4201)
 endif()
+
+# ── cuboid_transform_test ──────────────────────────────────────────────────────
+# Tests OverlayManager::computeFaceWorldMatrices without a VR runtime or D3D11.
+add_executable(cuboid_transform_test
+    tests/cuboid_transform_test.cpp
+    src/OverlayManager.cpp
+    src/ChromaRenderer.cpp
+    src/PassthroughBox.cpp
+)
+
+target_include_directories(cuboid_transform_test PRIVATE
+    src
+    ${CMAKE_SOURCE_DIR}/third_party/openvr/headers
+    ${CMAKE_SOURCE_DIR}/third_party/json/include
+)
+
+target_link_libraries(cuboid_transform_test PRIVATE
+    openvr_api64
+    spdlog::spdlog_header_only
+    glm::glm
+    d3d11
+    dxgi
+)
+
+target_compile_definitions(cuboid_transform_test PRIVATE
+    OPENVR_BUILD_STATIC
+    $<$<EQUAL:${CMAKE_SIZEOF_VOID_P},8>:WIN64>
+)
+
+if(MSVC)
+    target_compile_options(cuboid_transform_test PRIVATE /W4 /utf-8 /wd4201)
+endif()

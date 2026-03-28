@@ -11,7 +11,7 @@
 // version, name, globalChromaColor, and boxes[] are serialized.
 // Runtime-only fields on PassthroughBox (overlayHandle) are NOT serialized.
 struct Layout {
-    static constexpr int CURRENT_VERSION = 1;
+    static constexpr int CURRENT_VERSION = 2;
 
     int         version       = CURRENT_VERSION;
     std::string name;

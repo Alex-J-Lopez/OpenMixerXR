@@ -32,6 +32,7 @@ std::string LayoutStore::serializeLayout(const Layout& layout) {
         jb["rotRoll"]        = b.rotRoll;
         jb["scaleWidth"]     = b.scaleWidth;
         jb["scaleHeight"]    = b.scaleHeight;
+        jb["scaleDepth"]     = b.scaleDepth;
         jb["chromaR"]        = b.chromaR;
         jb["chromaG"]        = b.chromaG;
         jb["chromaB"]        = b.chromaB;
@@ -58,9 +59,9 @@ std::optional<Layout> LayoutStore::deserializeLayout(const std::string& jsonStr,
             return std::nullopt;
         }
         const int ver = j.at("version").get<int>();
-        if (ver != Layout::CURRENT_VERSION) {
+        if (ver != 1 && ver != Layout::CURRENT_VERSION) {
             errorOut = "unknown version " + std::to_string(ver)
-                       + " (expected " + std::to_string(Layout::CURRENT_VERSION) + ")";
+                       + " (supported: 1, " + std::to_string(Layout::CURRENT_VERSION) + ")";
             return std::nullopt;
         }
 
@@ -88,6 +89,7 @@ std::optional<Layout> LayoutStore::deserializeLayout(const std::string& jsonStr,
                 b.rotRoll        = jb.value("rotRoll",        0.0f);
                 b.scaleWidth     = jb.value("scaleWidth",     0.5f);
                 b.scaleHeight    = jb.value("scaleHeight",    0.3f);
+                b.scaleDepth     = jb.value("scaleDepth",     0.0f);  // 0 for v1 layouts (flat)
                 b.chromaR        = jb.value("chromaR",        0.0f);
                 b.chromaG        = jb.value("chromaG",        1.0f);
                 b.chromaB        = jb.value("chromaB",        0.502f);

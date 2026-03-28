@@ -45,7 +45,6 @@ static PassthroughBox makeBox(int suffix) {
     b.fadeNearMeters = 0.4f;
     b.fadeFarMeters  = 2.5f;
     b.visible        = (suffix % 2 == 0);
-    b.overlayHandle  = 0;   // runtime-only, must not be serialized
     return b;
 }
 
@@ -109,7 +108,6 @@ static void test_all_box_fields() {
     CHECK(approx(rest.fadeNearMeters,  orig.fadeNearMeters),     "fields: fadeNearMeters");
     CHECK(approx(rest.fadeFarMeters,   orig.fadeFarMeters),      "fields: fadeFarMeters");
     CHECK(rest.visible == orig.visible,                          "fields: visible");
-    CHECK(rest.overlayHandle == 0,                               "fields: overlayHandle omitted (runtime-only)");
 }
 
 // ── Version checks ────────────────────────────────────────────────────────────

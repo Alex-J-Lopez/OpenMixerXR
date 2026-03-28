@@ -112,26 +112,30 @@ void GrabController::tick(const DeviceTracker& tracker, OverlayManager& mgr) {
                 m_leftCtrlStart = glm::vec3(tracker.getLeftControllerPose()[3]);
                 m_startWidth    = box->scaleWidth;
                 m_startHeight   = box->scaleHeight;
+                m_startDepth    = box->scaleDepth;
                 m_resizing      = true;
-                LOG_INFO("GrabController: resize latched — start {:.3f} x {:.3f} m",
-                    m_startWidth, m_startHeight);
+                LOG_INFO("GrabController: resize latched — start {:.3f} x {:.3f} x {:.3f} m",
+                    m_startWidth, m_startHeight, m_startDepth);
             }
 
             // ── Left grip trailing edge: stop resize ──────────────────────────
             if (!leftGripping && m_wasLeftGripping && m_resizing) {
                 m_resizing = false;
-                LOG_INFO("GrabController: resize stopped — final {:.3f} x {:.3f} m",
-                    box->scaleWidth, box->scaleHeight);
+                LOG_INFO("GrabController: resize stopped — final {:.3f} x {:.3f} x {:.3f} m",
+                    box->scaleWidth, box->scaleHeight, box->scaleDepth);
             }
 
-            // ── While resizing: map left-hand world delta to width/height ─────
-            // World X delta → scaleWidth,  World Y delta → scaleHeight.
-            // Works naturally for boxes facing the user (most common case).
+            // ── While resizing: map left-hand world delta to width/height/depth ─
+            // X delta → scaleWidth  (negated: moving right = pinch = smaller width)
+            // Y delta → scaleHeight (positive: moving up   = taller)
+            // Z delta → scaleDepth  (negated: moving toward box = deeper)
+            // Uses world-space deltas — works well for boxes facing the user.
             if (m_resizing && leftGripping && leftTracked) {
                 const glm::vec3 leftPos(tracker.getLeftControllerPose()[3]);
                 const glm::vec3 delta  = leftPos - m_leftCtrlStart;
                 box->scaleWidth  = std::clamp(m_startWidth  - delta.x, 0.05f, 5.0f);
                 box->scaleHeight = std::clamp(m_startHeight + delta.y, 0.05f, 5.0f);
+                box->scaleDepth  = std::clamp(m_startDepth  - delta.z, 0.00f, 5.0f);
             }
             // If left tracking is lost mid-resize: freeze size at current values.
         }

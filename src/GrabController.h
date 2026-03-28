@@ -56,4 +56,5 @@ private:
     glm::vec3 m_leftCtrlStart   = {};
     float     m_startWidth      = 0.5f;
     float     m_startHeight     = 0.3f;
+    float     m_startDepth      = 0.0f;
 };
