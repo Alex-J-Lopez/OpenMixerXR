@@ -117,7 +117,7 @@ int main() {
 
     d3d.clearChromaIfNeeded(Config::CHROMA_R, Config::CHROMA_G, Config::CHROMA_B);
 
-    // ── 4. Create world-space overlay ─────────────────────────────────────────
+    // ── 4. Create overlay ─────────────────────────────────────────────────────
     vr::VROverlayHandle_t overlayHandle = vr::k_ulOverlayHandleInvalid;
     {
         const std::string key  = std::string(Config::OVERLAY_KEY_PREFIX) + "test0";
@@ -133,20 +133,26 @@ int main() {
     }
     LOG_INFO("Overlay created (handle {})", overlayHandle);
 
-    // 2 m wide for easy visibility during Phase 1 testing.
     constexpr float debugWidth = 2.0f;
 
     vr::HmdMatrix34_t transform = makeTranslation(
         Config::DEFAULT_BOX_X, Config::DEFAULT_BOX_Y, Config::DEFAULT_BOX_Z);
     vr::VROverlay()->SetOverlayTransformAbsolute(
         overlayHandle, vr::TrackingUniverseStanding, &transform);
+    LOG_INFO("Transform: world-space absolute at ({}, {}, {})",
+        Config::DEFAULT_BOX_X, Config::DEFAULT_BOX_Y, Config::DEFAULT_BOX_Z);
     vr::VROverlay()->SetOverlayWidthInMeters(overlayHandle, debugWidth);
     vr::VROverlay()->SetOverlayAlpha(overlayHandle, 1.0f);
 
     vr::Texture_t vrTex;
-    vrTex.handle      = static_cast<void*>(d3d.getTexture());
-    vrTex.eType       = vr::TextureType_DirectX;
+    vrTex.handle      = d3d.getSharedHandle();   // DXGI shared HANDLE — required for overlay targets
+    vrTex.eType       = vr::TextureType_DXGISharedHandle;
     vrTex.eColorSpace = vr::ColorSpace_Auto;
+
+    if (!vrTex.handle)
+        LOG_ERROR("getSharedHandle() returned null — texture was not created with MISC_SHARED");
+    else
+        LOG_INFO("DXGI shared handle: {:p}", vrTex.handle);
 
     {
         vr::EVROverlayError texErr = vr::VROverlay()->SetOverlayTexture(overlayHandle, &vrTex);

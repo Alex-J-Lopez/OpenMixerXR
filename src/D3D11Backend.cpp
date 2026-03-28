@@ -34,6 +34,7 @@ bool D3D11Backend::init(uint32_t width, uint32_t height, IDXGIAdapter* adapter) 
     desc.SampleDesc.Count   = 1;
     desc.Usage              = D3D11_USAGE_DEFAULT;
     desc.BindFlags          = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+    desc.MiscFlags          = D3D11_RESOURCE_MISC_SHARED; // required for cross-process compositor access
 
     hr = m_device->CreateTexture2D(&desc, nullptr, m_texture.GetAddressOf());
     if (FAILED(hr)) {
@@ -70,4 +71,17 @@ bool D3D11Backend::clearChromaIfNeeded(float r, float g, float b) {
     m_context->Flush();
     m_lastR = r; m_lastG = g; m_lastB = b;
     return true;
+}
+
+HANDLE D3D11Backend::getSharedHandle() const {
+    if (!m_texture) return nullptr;
+
+    Microsoft::WRL::ComPtr<IDXGIResource> dxgiResource;
+    if (FAILED(m_texture.As(&dxgiResource))) {
+        return nullptr;
+    }
+
+    HANDLE sharedHandle = nullptr;
+    dxgiResource->GetSharedHandle(&sharedHandle);
+    return sharedHandle;
 }

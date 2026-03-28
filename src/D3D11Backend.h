@@ -22,6 +22,12 @@ public:
     bool clearChromaIfNeeded(float r, float g, float b);
 
     ID3D11Texture2D* getTexture() const { return m_texture.Get(); }
+
+    // Returns the DXGI shared HANDLE for this texture.
+    // Pass this as vr::Texture_t::handle with TextureType_DXGISharedHandle —
+    // the type explicitly documented as "only supported for overlay render targets".
+    HANDLE getSharedHandle() const;
+
     bool isInitialized() const { return m_initialized; }
 
 private:
