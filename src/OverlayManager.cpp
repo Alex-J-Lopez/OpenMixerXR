@@ -64,10 +64,15 @@ bool OverlayManager::init(ID3D11Device* device, ID3D11DeviceContext* context) {
     return true;
 }
 
-void OverlayManager::shutdown() {
+void OverlayManager::clearBoxes() {
     for (auto& e : m_entries)
         destroyEntry(e);
     m_entries.clear();
+    // m_initialized stays true so addBox() can be called immediately.
+}
+
+void OverlayManager::shutdown() {
+    clearBoxes();
     m_initialized = false;
 }
 

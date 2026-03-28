@@ -5,9 +5,11 @@
 #include <openvr.h>
 #include <glm/glm.hpp>
 #include <string>
+#include <vector>
 
 #include <imgui.h>
 
+#include "LayoutStore.h"
 #include "OverlayManager.h"
 #include "DeviceTracker.h"
 #include "GrabController.h"
@@ -35,12 +37,13 @@ public:
     DashboardUI& operator=(const DashboardUI&) = delete;
 
     // device and context must outlive this object (owned by D3D11Backend).
-    // overlayMgr, tracker, and grabCtrl must outlive this object (owned by main).
+    // overlayMgr, tracker, grabCtrl, and layoutStore must outlive this object.
     bool init(ID3D11Device*        device,
               ID3D11DeviceContext* context,
               OverlayManager&      overlayMgr,
               DeviceTracker&       tracker,
-              GrabController&      grabCtrl);
+              GrabController&      grabCtrl,
+              LayoutStore&         layoutStore);
     void shutdown();
 
     // Feed system-wide VR events (VREvent_DashboardActivated/Deactivated).
@@ -58,6 +61,18 @@ public:
     // Recreate both overlay handles (call after VR_Init).
     bool reopenOverlays();
 
+    // ── Layout persistence (Phase 4) ──────────────────────────────────────────
+
+    // Try to restore the last session from disk.
+    // If successful, clears OverlayManager boxes and loads the session's boxes.
+    // Returns true if a session was found and applied.
+    // Call after init() and before the main loop.
+    bool tryRestoreSession();
+
+    // Build a Layout from current state and save it as last_session.json.
+    // Call on VREvent_Quit before overlay teardown.
+    void saveSession();
+
 private:
     bool createDashboardHandles();
     bool createRenderTarget();
@@ -65,11 +80,21 @@ private:
     void snapSelectedToHmd();
     void recalibrate();
 
-    ID3D11Device*        m_device     = nullptr;
-    ID3D11DeviceContext* m_context    = nullptr;
-    OverlayManager*      m_overlayMgr = nullptr;
-    DeviceTracker*       m_tracker    = nullptr;
-    GrabController*      m_grab       = nullptr;
+    // ── Layout helpers ────────────────────────────────────────────────────────
+    void applyLayout(const Layout& layout);
+    void saveLayout();
+    void loadLayout();
+    void deleteLayout();
+    void renameLayout();
+    void refreshLayoutList();
+    Layout buildCurrentLayout(const std::string& name) const;
+
+    ID3D11Device*        m_device      = nullptr;
+    ID3D11DeviceContext* m_context     = nullptr;
+    OverlayManager*      m_overlayMgr  = nullptr;
+    DeviceTracker*       m_tracker     = nullptr;
+    GrabController*      m_grab        = nullptr;
+    LayoutStore*         m_layoutStore = nullptr;
 
     // Two handles from CreateDashboardOverlay (Phase 2 finding #5).
     vr::VROverlayHandle_t m_mainHandle      = vr::k_ulOverlayHandleInvalid;
@@ -96,4 +121,10 @@ private:
     int  m_nextBoxId      = 10;  // monotone counter for generated box IDs
     bool m_dashboardActive = false;
     bool m_initialized     = false;
+
+    // ── Layout panel state ───────────────────────────────────────────────────
+    char                     m_layoutNameBuf[128] = {};
+    int                      m_selectedLayout     = -1;
+    std::vector<std::string> m_layoutList;
+    std::string              m_layoutStatusMsg;   // prefix '!' = error (red), else success (green)
 };

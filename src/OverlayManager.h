@@ -29,6 +29,11 @@ public:
     // Texture dimensions are computed per-box from scaleWidth:scaleHeight (Phase 3.5).
     bool init(ID3D11Device* device, ID3D11DeviceContext* context);
 
+    // Destroy all overlay handles and chroma renderers, clearing the entry list.
+    // Does NOT mark the manager as uninitialized — addBox() may be called immediately.
+    // (Used by DashboardUI when loading a layout replaces all boxes.)
+    void clearBoxes();
+
     // Destroy all overlay handles and chroma renderers.
     void shutdown();
 

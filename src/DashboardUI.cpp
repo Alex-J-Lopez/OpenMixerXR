@@ -56,12 +56,14 @@ bool DashboardUI::init(ID3D11Device*        device,
                         ID3D11DeviceContext* context,
                         OverlayManager&      overlayMgr,
                         DeviceTracker&       tracker,
-                        GrabController&      grabCtrl) {
-    m_device     = device;
-    m_context    = context;
-    m_overlayMgr = &overlayMgr;
-    m_tracker    = &tracker;
-    m_grab       = &grabCtrl;
+                        GrabController&      grabCtrl,
+                        LayoutStore&         layoutStore) {
+    m_device      = device;
+    m_context     = context;
+    m_overlayMgr  = &overlayMgr;
+    m_tracker     = &tracker;
+    m_grab        = &grabCtrl;
+    m_layoutStore = &layoutStore;
 
     if (!createRenderTarget())      return false;
     if (!createDashboardHandles())  return false;
@@ -199,6 +201,7 @@ void DashboardUI::handleSystemEvent(const vr::VREvent_t& event) {
             ImGui::SetCurrentContext(m_imguiCtx);
             ImGui::GetIO().DeltaTime = 1.0f / 90.0f;
         }
+        refreshLayoutList();   // keep the layout list current each time the dashboard opens
         LOG_DEBUG("DashboardUI: activated");
         break;
     case vr::VREvent_DashboardDeactivated:
@@ -346,9 +349,9 @@ void DashboardUI::buildUI() {
     const float rightW = ImGui::GetContentRegionAvail().x - leftW - ImGui::GetStyle().ItemSpacing.x;
     const int   nBoxes = static_cast<int>(m_overlayMgr->boxCount());
 
-    // Reserve height for the bottom bar: checkbox row + chroma row + layout-stubs row + separator.
+    // Reserve height for the bottom bar: checkbox row + chroma row + layout row + status row + separator.
     const float lineH   = ImGui::GetFrameHeightWithSpacing();
-    const float bottomH = lineH * 3.0f + ImGui::GetStyle().ItemSpacing.y + 4.0f;
+    const float bottomH = lineH * 4.0f + ImGui::GetStyle().ItemSpacing.y + 4.0f;
     const float panelH  = ImGui::GetContentRegionAvail().y - bottomH;
 
     // ── Left: box list + Add/Delete (inside the panel) ───────────────────────
@@ -554,18 +557,169 @@ void DashboardUI::buildUI() {
     if (ImGui::Button("Recalibrate")) recalibrate();
     if (!tracked) ImGui::EndDisabled();
 
-    // Row 3: FR-34 stubs.
-    ImGui::BeginDisabled();
-    ImGui::Button("Save Layout");
-    ImGui::SameLine();
-    ImGui::Button("Load Layout");
-    ImGui::SameLine();
-    ImGui::Button("Delete Layout");
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    ImGui::TextDisabled("(Phase 4)");
+    // Row 3: FR-20–FR-25 Layout management panel.
+    {
+        const bool hasSel  = m_selectedLayout >= 0 &&
+                             m_selectedLayout < static_cast<int>(m_layoutList.size());
+        const bool hasName = m_layoutNameBuf[0] != '\0';
+
+        // Combo: pick an existing layout (for Load / Delete / Rename).
+        const char* comboPreview = hasSel ? m_layoutList[m_selectedLayout].c_str()
+                                          : "(select layout)";
+        ImGui::SetNextItemWidth(190.f);
+        if (ImGui::BeginCombo("##layouts", comboPreview)) {
+            for (int li = 0; li < static_cast<int>(m_layoutList.size()); ++li) {
+                const bool selected = (m_selectedLayout == li);
+                if (ImGui::Selectable(m_layoutList[li].c_str(), selected))
+                    m_selectedLayout = li;
+                if (selected) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(150.f);
+        ImGui::InputText("##layoutname", m_layoutNameBuf, sizeof(m_layoutNameBuf));
+        ImGui::SameLine();
+        ImGui::TextDisabled("Name");
+
+        ImGui::SameLine();
+        if (!hasName) ImGui::BeginDisabled();
+        if (ImGui::Button("Save"))   saveLayout();
+        if (!hasName) ImGui::EndDisabled();
+
+        ImGui::SameLine();
+        if (!hasSel) ImGui::BeginDisabled();
+        if (ImGui::Button("Load"))   loadLayout();
+        ImGui::SameLine();
+        if (ImGui::Button("Delete")) deleteLayout();
+        if (!hasSel) ImGui::EndDisabled();
+
+        ImGui::SameLine();
+        if (!hasSel || !hasName) ImGui::BeginDisabled();
+        if (ImGui::Button("Rename")) renameLayout();
+        if (!hasSel || !hasName) ImGui::EndDisabled();
+    }
+
+    // Row 4: layout status / error feedback.
+    if (!m_layoutStatusMsg.empty()) {
+        const bool isError = !m_layoutStatusMsg.empty() && m_layoutStatusMsg[0] == '!';
+        if (isError)
+            ImGui::TextColored(ImVec4(1.f, 0.4f, 0.4f, 1.f),
+                               "%s", m_layoutStatusMsg.c_str() + 1);
+        else
+            ImGui::TextColored(ImVec4(0.4f, 1.f, 0.5f, 1.f),
+                               "%s", m_layoutStatusMsg.c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("x")) m_layoutStatusMsg.clear();
+    }
 
     ImGui::End();
+}
+
+// ── Layout helpers ────────────────────────────────────────────────────────────
+
+Layout DashboardUI::buildCurrentLayout(const std::string& name) const {
+    Layout layout;
+    layout.version       = Layout::CURRENT_VERSION;
+    layout.name          = name;
+    layout.globalChromaR = m_globalChromaR;
+    layout.globalChromaG = m_globalChromaG;
+    layout.globalChromaB = m_globalChromaB;
+    for (std::size_t i = 0; i < m_overlayMgr->boxCount(); ++i) {
+        const PassthroughBox* b = m_overlayMgr->boxAt(i);
+        if (b) layout.boxes.push_back(*b);
+    }
+    return layout;
+}
+
+void DashboardUI::applyLayout(const Layout& layout) {
+    m_grab->disableMoveMode();      // cancel any active grab to avoid dangling box index
+    m_overlayMgr->clearBoxes();
+    for (const PassthroughBox& b : layout.boxes)
+        m_overlayMgr->addBox(b);
+    m_globalChromaR = layout.globalChromaR;
+    m_globalChromaG = layout.globalChromaG;
+    m_globalChromaB = layout.globalChromaB;
+    m_selectedBox   = 0;
+}
+
+void DashboardUI::refreshLayoutList() {
+    if (!m_layoutStore) return;
+    m_layoutList = m_layoutStore->enumerate();
+    if (m_selectedLayout >= static_cast<int>(m_layoutList.size()))
+        m_selectedLayout = static_cast<int>(m_layoutList.size()) - 1;
+}
+
+void DashboardUI::saveLayout() {
+    const Layout layout = buildCurrentLayout(m_layoutNameBuf);
+    if (m_layoutStore->save(layout)) {
+        m_layoutStatusMsg = "Saved '" + layout.name + "'";
+        refreshLayoutList();
+        // Auto-select the just-saved layout in the combo.
+        const auto it = std::find(m_layoutList.begin(), m_layoutList.end(), layout.name);
+        if (it != m_layoutList.end())
+            m_selectedLayout = static_cast<int>(it - m_layoutList.begin());
+    } else {
+        m_layoutStatusMsg = "!Save failed: " + m_layoutStore->lastError();
+        m_layoutStore->clearError();
+    }
+}
+
+void DashboardUI::loadLayout() {
+    const std::string& name = m_layoutList[m_selectedLayout];
+    auto opt = m_layoutStore->load(name);
+    if (opt) {
+        applyLayout(*opt);
+        m_layoutStatusMsg = "Loaded '" + name + "'";
+    } else {
+        m_layoutStatusMsg = "!Load failed: " + m_layoutStore->lastError();
+        m_layoutStore->clearError();
+    }
+}
+
+void DashboardUI::deleteLayout() {
+    const std::string name = m_layoutList[m_selectedLayout];
+    if (m_layoutStore->deleteLayout(name)) {
+        m_layoutStatusMsg = "Deleted '" + name + "'";
+        refreshLayoutList();
+        m_selectedLayout = std::min(m_selectedLayout,
+                                    static_cast<int>(m_layoutList.size()) - 1);
+    } else {
+        m_layoutStatusMsg = "!Delete failed: " + m_layoutStore->lastError();
+        m_layoutStore->clearError();
+    }
+}
+
+void DashboardUI::renameLayout() {
+    const std::string oldName = m_layoutList[m_selectedLayout];
+    const std::string newName = m_layoutNameBuf;
+    if (m_layoutStore->renameLayout(oldName, newName)) {
+        m_layoutStatusMsg = "Renamed '" + oldName + "' \xe2\x86\x92 '" + newName + "'";
+        refreshLayoutList();
+        const auto it = std::find(m_layoutList.begin(), m_layoutList.end(), newName);
+        if (it != m_layoutList.end())
+            m_selectedLayout = static_cast<int>(it - m_layoutList.begin());
+        std::snprintf(m_layoutNameBuf, sizeof(m_layoutNameBuf), "%s", newName.c_str());
+    } else {
+        m_layoutStatusMsg = "!Rename failed: " + m_layoutStore->lastError();
+        m_layoutStore->clearError();
+    }
+}
+
+bool DashboardUI::tryRestoreSession() {
+    if (!m_layoutStore) return false;
+    auto opt = m_layoutStore->loadLastSession();
+    if (!opt) return false;
+    applyLayout(*opt);
+    LOG_INFO("DashboardUI: last session applied ({} boxes)", opt->boxes.size());
+    return true;
+}
+
+void DashboardUI::saveSession() {
+    if (!m_layoutStore) return;
+    const Layout session = buildCurrentLayout("last_session");
+    m_layoutStore->saveLastSession(session);
 }
 
 // ── Reconnect helpers ─────────────────────────────────────────────────────────
