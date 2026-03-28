@@ -1,3 +1,9 @@
+// Threading model (Phase 2 decision):
+//   Single main thread only. All VR API calls, D3D11 operations, and overlay updates
+//   happen sequentially in the loop below at ~90 Hz. This avoids synchronisation overhead
+//   while we have no dashboard UI to drive concurrently. Phase 3 (DashboardUI) will
+//   evaluate whether a separate Dashboard Thread is needed — see phase-3-dashboard-ui.md.
+
 #include <windows.h>
 #include <dxgi1_2.h>
 #include <wrl/client.h>
@@ -5,12 +11,16 @@
 #include <chrono>
 #include <thread>
 #include <string>
+#include <array>
 
 #include <openvr.h>
 
 #include "Logger.h"
 #include "Config.h"
 #include "D3D11Backend.h"
+#include "OverlayManager.h"
+#include "DeviceTracker.h"
+#include "PassthroughBox.h"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -20,17 +30,9 @@ static std::string executableDir() {
     return std::filesystem::path(buf).parent_path().string();
 }
 
-static vr::HmdMatrix34_t makeTranslation(float x, float y, float z) {
-    vr::HmdMatrix34_t m = {};
-    m.m[0][0] = 1.0f;  m.m[0][3] = x;
-    m.m[1][1] = 1.0f;  m.m[1][3] = y;
-    m.m[2][2] = 1.0f;  m.m[2][3] = z;
-    return m;
-}
-
-// Ask SteamVR which DXGI adapter it is using and return it.
-// Critical on multi-GPU machines — the D3D device must be on the same adapter
-// as the compositor or SetOverlayTexture will silently fail.
+// Ask SteamVR which DXGI adapter it is using.
+// The D3D11 device must be on the same adapter as the compositor or
+// SetOverlayTexture will silently produce a black texture (Phase 1 finding #3).
 static Microsoft::WRL::ComPtr<IDXGIAdapter> findVRAdapter(vr::IVRSystem* vrSystem) {
     uint64_t adapterId = 0;
     vrSystem->GetOutputDevice(&adapterId, vr::TextureType_DirectX);
@@ -46,17 +48,14 @@ static Microsoft::WRL::ComPtr<IDXGIAdapter> findVRAdapter(vr::IVRSystem* vrSyste
         return nullptr;
     }
 
-    LUID target;
-    target.LowPart  = static_cast<DWORD>(adapterId & 0xFFFFFFFF);
-    target.HighPart = static_cast<LONG> (adapterId >> 32);
+    const DWORD lo = static_cast<DWORD>(adapterId & 0xFFFFFFFF);
+    const LONG  hi = static_cast<LONG> (adapterId >> 32);
 
     Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
     for (UINT i = 0; factory->EnumAdapters1(i, adapter.GetAddressOf()) != DXGI_ERROR_NOT_FOUND; ++i) {
         DXGI_ADAPTER_DESC1 desc;
         adapter->GetDesc1(&desc);
-        if (desc.AdapterLuid.LowPart  == target.LowPart &&
-            desc.AdapterLuid.HighPart == target.HighPart) {
-            // Convert wide description to narrow for logging
+        if (desc.AdapterLuid.LowPart == lo && desc.AdapterLuid.HighPart == hi) {
             char name[128] = {};
             WideCharToMultiByte(CP_UTF8, 0, desc.Description, -1, name, sizeof(name), nullptr, nullptr);
             LOG_INFO("VR adapter: {}", name);
@@ -69,118 +68,149 @@ static Microsoft::WRL::ComPtr<IDXGIAdapter> findVRAdapter(vr::IVRSystem* vrSyste
     return nullptr;
 }
 
+// Initialise OpenVR and register the application manifest.
+// Extracted so it can be called again after a reconnect.
+static bool setupVR(vr::IVRSystem*& vrSystem, const std::string& manifestPath) {
+    vr::EVRInitError vrErr = vr::VRInitError_None;
+    vrSystem = vr::VR_Init(&vrErr, vr::VRApplication_Overlay);
+    if (vrErr != vr::VRInitError_None || !vrSystem) {
+        LOG_ERROR("VR_Init failed: {}",
+            vr::VR_GetVRInitErrorAsEnglishDescription(vrErr));
+        return false;
+    }
+
+    vr::EVRApplicationError appErr =
+        vr::VRApplications()->AddApplicationManifest(manifestPath.c_str(), false);
+    if (appErr != vr::VRApplicationError_None)
+        LOG_WARN("AddApplicationManifest: {}",
+            vr::VRApplications()->GetApplicationsErrorNameFromEnum(appErr));
+
+    appErr = vr::VRApplications()->IdentifyApplication(
+        GetCurrentProcessId(), Config::APP_KEY);
+    if (appErr != vr::VRApplicationError_None)
+        LOG_WARN("IdentifyApplication: {}",
+            vr::VRApplications()->GetApplicationsErrorNameFromEnum(appErr));
+
+    return true;
+}
+
+// Build the three hardcoded validation boxes at distinct positions/orientations.
+// All use the same chroma key color to match Virtual Desktop's default.
+static std::array<PassthroughBox, 3> makeDefaultBoxes() {
+    std::array<PassthroughBox, 3> boxes;
+
+    // Box 0 — directly in front of the standing origin, full-size
+    boxes[0].id           = "box0";
+    boxes[0].name         = "Front";
+    boxes[0].posX         =  0.0f;
+    boxes[0].posY         =  1.0f;
+    boxes[0].posZ         = -1.0f;
+    boxes[0].scaleWidth   =  0.8f;
+
+    // Box 1 — to the left, slightly rotated inward (15° yaw)
+    boxes[1].id           = "box1";
+    boxes[1].name         = "Left";
+    boxes[1].posX         = -1.0f;
+    boxes[1].posY         =  1.0f;
+    boxes[1].posZ         =  0.0f;
+    boxes[1].rotYaw       = 15.0f;
+    boxes[1].scaleWidth   =  0.8f;
+
+    // Box 2 — to the right, slightly rotated inward (-15° yaw)
+    boxes[2].id           = "box2";
+    boxes[2].name         = "Right";
+    boxes[2].posX         =  1.0f;
+    boxes[2].posY         =  1.0f;
+    boxes[2].posZ         =  0.0f;
+    boxes[2].rotYaw       = -15.0f;
+    boxes[2].scaleWidth   =  0.8f;
+
+    return boxes;
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 int main() {
     Logger::init();
-    LOG_INFO("OpenMixer VR starting");
+    LOG_INFO("OpenMixer VR starting (Phase 2)");
 
-    // ── 1. Initialise OpenVR ──────────────────────────────────────────────────
-    vr::EVRInitError vrErr = vr::VRInitError_None;
-    vr::IVRSystem* vrSystem = vr::VR_Init(&vrErr, vr::VRApplication_Overlay);
-    if (vrErr != vr::VRInitError_None || !vrSystem) {
-        LOG_ERROR("VR_Init failed: {}",
-            vr::VR_GetVRInitErrorAsEnglishDescription(vrErr));
-        return 1;
-    }
-    LOG_INFO("OpenVR initialised");
-
-    // ── 2. Register application manifest ──────────────────────────────────────
     const std::string manifestPath =
         (std::filesystem::path(executableDir()) / "manifest.vrmanifest").string();
 
-    vr::EVRApplicationError appErr =
-        vr::VRApplications()->AddApplicationManifest(manifestPath.c_str(), false);
-    if (appErr != vr::VRApplicationError_None) {
-        LOG_WARN("AddApplicationManifest: {}",
-            vr::VRApplications()->GetApplicationsErrorNameFromEnum(appErr));
-    } else {
-        LOG_INFO("Manifest registered: {}", manifestPath);
-    }
+    // ── 1. Initialise OpenVR ──────────────────────────────────────────────────
+    vr::IVRSystem* vrSystem = nullptr;
+    if (!setupVR(vrSystem, manifestPath))
+        return 1;
+    LOG_INFO("OpenVR initialised");
 
-    appErr = vr::VRApplications()->IdentifyApplication(
-        GetCurrentProcessId(), Config::APP_KEY);
-    if (appErr != vr::VRApplicationError_None) {
-        LOG_WARN("IdentifyApplication: {}",
-            vr::VRApplications()->GetApplicationsErrorNameFromEnum(appErr));
-    }
-
-    // ── 3. Initialise D3D11 on the same adapter SteamVR is using ─────────────
+    // ── 2. Initialise D3D11 on SteamVR's adapter ──────────────────────────────
     auto vrAdapter = findVRAdapter(vrSystem);
 
     D3D11Backend d3d;
     if (!d3d.init(Config::TEXTURE_WIDTH, Config::TEXTURE_HEIGHT, vrAdapter.Get())) {
-        LOG_ERROR("D3D11Backend init failed — aborting");
+        LOG_ERROR("D3D11Backend init failed");
         vr::VR_Shutdown();
         return 1;
     }
 
-    d3d.clearChromaIfNeeded(Config::CHROMA_R, Config::CHROMA_G, Config::CHROMA_B);
+    // ── 3. Initialise OverlayManager and add the three boxes ──────────────────
+    OverlayManager overlayManager;
+    if (!overlayManager.init(d3d.getDevice(), d3d.getContext(),
+                              Config::TEXTURE_WIDTH, Config::TEXTURE_HEIGHT)) {
+        vr::VR_Shutdown();
+        return 1;
+    }
 
-    // ── 4. Create overlay ─────────────────────────────────────────────────────
-    vr::VROverlayHandle_t overlayHandle = vr::k_ulOverlayHandleInvalid;
-    {
-        const std::string key  = std::string(Config::OVERLAY_KEY_PREFIX) + "test0";
-        const std::string name = "OpenMixer Test Box";
-        vr::EVROverlayError ovErr =
-            vr::VROverlay()->CreateOverlay(key.c_str(), name.c_str(), &overlayHandle);
-        if (ovErr != vr::VROverlayError_None) {
-            LOG_ERROR("CreateOverlay failed: {}",
-                vr::VROverlay()->GetOverlayErrorNameFromEnum(ovErr));
+    for (const auto& box : makeDefaultBoxes()) {
+        if (!overlayManager.addBox(box)) {
+            LOG_ERROR("Failed to add box '{}'", box.id);
             vr::VR_Shutdown();
             return 1;
         }
     }
-    LOG_INFO("Overlay created (handle {})", overlayHandle);
+    LOG_INFO("{} boxes registered", overlayManager.boxCount());
 
-    constexpr float debugWidth = 2.0f;
-
-    vr::HmdMatrix34_t transform = makeTranslation(
-        Config::DEFAULT_BOX_X, Config::DEFAULT_BOX_Y, Config::DEFAULT_BOX_Z);
-    vr::VROverlay()->SetOverlayTransformAbsolute(
-        overlayHandle, vr::TrackingUniverseStanding, &transform);
-    LOG_INFO("Transform: world-space absolute at ({}, {}, {})",
-        Config::DEFAULT_BOX_X, Config::DEFAULT_BOX_Y, Config::DEFAULT_BOX_Z);
-    vr::VROverlay()->SetOverlayWidthInMeters(overlayHandle, debugWidth);
-    vr::VROverlay()->SetOverlayAlpha(overlayHandle, 1.0f);
-
-    vr::Texture_t vrTex;
-    vrTex.handle      = d3d.getSharedHandle();   // DXGI shared HANDLE — required for overlay targets
-    vrTex.eType       = vr::TextureType_DXGISharedHandle;
-    vrTex.eColorSpace = vr::ColorSpace_Auto;
-
-    if (!vrTex.handle)
-        LOG_ERROR("getSharedHandle() returned null — texture was not created with MISC_SHARED");
-    else
-        LOG_INFO("DXGI shared handle: {:p}", vrTex.handle);
-
-    {
-        vr::EVROverlayError texErr = vr::VROverlay()->SetOverlayTexture(overlayHandle, &vrTex);
-        if (texErr != vr::VROverlayError_None)
-            LOG_ERROR("SetOverlayTexture: {}",
-                vr::VROverlay()->GetOverlayErrorNameFromEnum(texErr));
-        else
-            LOG_INFO("Texture submitted OK");
-    }
-
-    {
-        vr::EVROverlayError showErr = vr::VROverlay()->ShowOverlay(overlayHandle);
-        if (showErr != vr::VROverlayError_None)
-            LOG_ERROR("ShowOverlay: {}",
-                vr::VROverlay()->GetOverlayErrorNameFromEnum(showErr));
-        else
-            LOG_INFO("Overlay shown — {}m wide at ({}, {}, {})",
-                debugWidth,
-                Config::DEFAULT_BOX_X, Config::DEFAULT_BOX_Y, Config::DEFAULT_BOX_Z);
-    }
-
-    // ── 5. Main loop ──────────────────────────────────────────────────────────
-    LOG_INFO("Entering main loop");
+    // ── 4. Main loop ──────────────────────────────────────────────────────────
+    DeviceTracker tracker;
     bool running = true;
 
     while (running) {
+
+        // Detect compositor loss (SRD §6.2 reconnect).
+        if (!vr::VRSystem() || !vr::VROverlay()) {
+            LOG_WARN("VR interfaces lost — attempting reconnect");
+            overlayManager.closeOverlays();
+            vr::VR_Shutdown();
+            vrSystem = nullptr;
+
+            int backoffMs = 1000;
+            bool reconnected = false;
+            for (int attempt = 1; attempt <= 10 && !reconnected; ++attempt) {
+                LOG_INFO("Reconnect attempt {}/10 (waiting {}ms)...", attempt, backoffMs);
+                std::this_thread::sleep_for(std::chrono::milliseconds(backoffMs));
+                backoffMs = std::min(backoffMs * 2, 30000);
+
+                if (setupVR(vrSystem, manifestPath)) {
+                    reconnected = true;
+                    LOG_INFO("Reconnected to SteamVR");
+                }
+            }
+
+            if (!reconnected) {
+                LOG_ERROR("Reconnect failed — exiting");
+                break;
+            }
+
+            if (!overlayManager.reopenOverlays()) {
+                LOG_ERROR("reopenOverlays failed after reconnect — exiting");
+                break;
+            }
+        }
+
+        // Poll VR events.
         vr::VREvent_t event;
         while (vr::VRSystem()->PollNextEvent(&event, sizeof(event))) {
+            overlayManager.handleEvent(event);
             if (event.eventType == vr::VREvent_Quit) {
                 LOG_INFO("VREvent_Quit — shutting down");
                 vr::VRSystem()->AcknowledgeQuit_Exiting();
@@ -189,15 +219,15 @@ int main() {
         }
         if (!running) break;
 
-        vr::VROverlay()->SetOverlayTexture(overlayHandle, &vrTex);
-        std::this_thread::sleep_for(std::chrono::milliseconds(11));
+        // Update HMD pose then run per-box frame update.
+        tracker.update(vrSystem);
+        overlayManager.frame(tracker.getHmdPosition());
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(11));   // ~90 Hz
     }
 
-    // ── 6. Clean shutdown ─────────────────────────────────────────────────────
-    if (overlayHandle != vr::k_ulOverlayHandleInvalid) {
-        vr::VROverlay()->HideOverlay(overlayHandle);
-        vr::VROverlay()->DestroyOverlay(overlayHandle);
-    }
+    // ── 5. Clean shutdown ─────────────────────────────────────────────────────
+    overlayManager.shutdown();   // destroys all overlay handles before VR_Shutdown
     d3d.shutdown();
     vr::VR_Shutdown();
     LOG_INFO("Shutdown complete");

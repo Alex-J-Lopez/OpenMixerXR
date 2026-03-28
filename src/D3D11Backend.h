@@ -21,6 +21,10 @@ public:
     // the GPU command buffer so the compositor sees the updated pixels immediately.
     bool clearChromaIfNeeded(float r, float g, float b);
 
+    // Shared device + context — passed to ChromaRenderer instances.
+    ID3D11Device*        getDevice()  const { return m_device.Get(); }
+    ID3D11DeviceContext* getContext() const { return m_context.Get(); }
+
     ID3D11Texture2D* getTexture() const { return m_texture.Get(); }
 
     // Returns the DXGI shared HANDLE for this texture.
