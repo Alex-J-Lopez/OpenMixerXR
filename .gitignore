@@ -63,3 +63,9 @@ ipch/
 TestResults/
 
 /development-plans
+
+# CMake build directories
+build/
+out/
+cmake-build-*/
+
