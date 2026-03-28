@@ -68,6 +68,12 @@ public:
     // Pre-allocate internal storage so addBox never reallocates (Phase 2 finding #9).
     void reserveBoxes(std::size_t n) { m_entries.reserve(n); }
 
+    // When false (default): world boxes remain visible while the dashboard is open,
+    // so the user can position them with the dashboard UI in view.
+    // When true: boxes are hidden whenever the dashboard is active.
+    void setHideBoxesWhenDashboard(bool hide) { m_hideBoxesWhenDashboard = hide; }
+    bool getHideBoxesWhenDashboard() const     { return m_hideBoxesWhenDashboard; }
+
 private:
     struct Entry {
         PassthroughBox        box;
@@ -81,8 +87,9 @@ private:
     ID3D11DeviceContext* m_context = nullptr;
     uint32_t m_texW    = 512;
     uint32_t m_texH    = 512;
-    bool     m_initialized   = false;
-    bool     m_dashboardOpen = false;
+    bool     m_initialized          = false;
+    bool     m_dashboardOpen        = false;
+    bool     m_hideBoxesWhenDashboard = false;   // controlled by dashboard UI toggle
 
     void destroyEntry(Entry& e);
     bool createOverlayHandle(Entry& e);

@@ -108,7 +108,7 @@ void OverlayManager::frame(const glm::vec3& hmdPos) {
     for (auto& e : m_entries) {
         if (e.handle == vr::k_ulOverlayHandleInvalid) continue;
 
-        if (!e.box.visible || m_dashboardOpen) {
+        if (!e.box.visible || (m_dashboardOpen && m_hideBoxesWhenDashboard)) {
             vr::VROverlay()->HideOverlay(e.handle);
             continue;
         }

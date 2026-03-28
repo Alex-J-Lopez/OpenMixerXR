@@ -298,11 +298,17 @@ void DashboardUI::buildUI() {
     ImGui::Separator();
 
     const float leftW  = 240.0f;
-    const float rightW = ImGui::GetContentRegionAvail().x - leftW - 8.0f;
+    const float rightW = ImGui::GetContentRegionAvail().x - leftW - ImGui::GetStyle().ItemSpacing.x;
     const int   nBoxes = static_cast<int>(m_overlayMgr->boxCount());
 
-    // ── Left: box list ────────────────────────────────────────────────────────
-    ImGui::BeginChild("##boxlist", ImVec2(leftW, -60.0f), true);
+    // Reserve height for the bottom bar: checkbox row + chroma row + layout-stubs row + separator.
+    const float lineH   = ImGui::GetFrameHeightWithSpacing();
+    const float bottomH = lineH * 3.0f + ImGui::GetStyle().ItemSpacing.y + 4.0f;
+    const float panelH  = ImGui::GetContentRegionAvail().y - bottomH;
+
+    // ── Left: box list + Add/Delete (inside the panel) ───────────────────────
+    ImGui::BeginChild("##boxlist", ImVec2(leftW, panelH), true);
+
     ImGui::TextDisabled("Boxes (%d)", nBoxes);
     ImGui::Separator();
 
@@ -311,23 +317,24 @@ void DashboardUI::buildUI() {
         if (!box) continue;
 
         ImGui::PushID(i);
-
-        // Visibility checkbox (FR-08).
-        ImGui::Checkbox("##vis", &box->visible);
+        ImGui::Checkbox("##vis", &box->visible);   // FR-08: visibility toggle
         ImGui::SameLine();
-
         const bool selected = (m_selectedBox == i);
         if (ImGui::Selectable(box->name.empty() ? box->id.c_str() : box->name.c_str(),
-                               selected, ImGuiSelectableFlags_None)) {
+                               selected, ImGuiSelectableFlags_None))
             m_selectedBox = i;
-        }
         ImGui::PopID();
     }
-    ImGui::EndChild();
 
-    // Add / Delete buttons.
+    // Pin Add/Delete to the bottom of the left panel.
+    const float addBtnY = panelH
+        - ImGui::GetFrameHeightWithSpacing()
+        - ImGui::GetStyle().WindowPadding.y;
+    ImGui::SetCursorPosY(addBtnY);
+    ImGui::Separator();
+
     if (ImGui::Button("+ Add")) {
-        // FR-01: new box snapped 1m in front of HMD if tracked, otherwise default pos.
+        // FR-01: new box spawned 1m in front of HMD, or at default pos if not tracked.
         PassthroughBox nb;
         char idBuf[32];
         std::snprintf(idBuf, sizeof(idBuf), "box%d", m_nextBoxId++);
@@ -341,7 +348,7 @@ void DashboardUI::buildUI() {
             nb.posX = sp.x; nb.posY = sp.y; nb.posZ = sp.z;
         }
         m_overlayMgr->addBox(nb);
-        m_selectedBox = nBoxes;   // select the new box
+        m_selectedBox = nBoxes;   // auto-select the new box
     }
     ImGui::SameLine();
     if (ImGui::Button("- Delete") && nBoxes > 0) {
@@ -350,14 +357,17 @@ void DashboardUI::buildUI() {
             m_overlayMgr->boxAt(static_cast<std::size_t>(m_selectedBox));
         if (box) {
             m_overlayMgr->removeBox(box->id);
-            if (m_selectedBox >= nBoxes - 1)
-                m_selectedBox = std::max(0, nBoxes - 2);
+            m_selectedBox = std::max(0, std::min(m_selectedBox, nBoxes - 2));
         }
     }
 
-    // ── Right: properties ─────────────────────────────────────────────────────
+    ImGui::EndChild();
+
+    // ── SameLine immediately after EndChild so ##props appears to the right ──
     ImGui::SameLine();
-    ImGui::BeginChild("##props", ImVec2(rightW, -60.0f), true);
+
+    // ── Right: properties ─────────────────────────────────────────────────────
+    ImGui::BeginChild("##props", ImVec2(rightW, panelH), true);
 
     PassthroughBox* sel = m_overlayMgr->boxAt(static_cast<std::size_t>(m_selectedBox));
     if (sel) {
@@ -413,14 +423,22 @@ void DashboardUI::buildUI() {
     } else {
         ImGui::TextDisabled("No box selected");
     }
+
     ImGui::EndChild();
 
-    // ── Bottom bar ────────────────────────────────────────────────────────────
+    // ── Bottom bar (below both panels) ────────────────────────────────────────
     ImGui::Separator();
 
-    // FR-35: global chroma picker.
+    // Row 1: visibility toggle.
+    bool hideWhenDash = m_overlayMgr->getHideBoxesWhenDashboard();
+    if (ImGui::Checkbox("Hide boxes when dashboard open", &hideWhenDash))
+        m_overlayMgr->setHideBoxesWhenDashboard(hideWhenDash);
+    ImGui::SameLine();
+    ImGui::TextDisabled("(uncheck to position boxes live)");
+
+    // Row 2: FR-35 global chroma + FR-36 recalibrate.
+    ImGui::SetNextItemWidth(160.0f);
     float gc[3] = { m_globalChromaR, m_globalChromaG, m_globalChromaB };
-    ImGui::SetNextItemWidth(180.0f);
     if (ImGui::ColorEdit3("Global chroma", gc)) {
         m_globalChromaR = gc[0]; m_globalChromaG = gc[1]; m_globalChromaB = gc[2];
     }
@@ -434,18 +452,12 @@ void DashboardUI::buildUI() {
         }
     }
     ImGui::SameLine();
-
-    // FR-36: Recalibrate (§8.4 — shifts all boxes by HMD position delta).
     const bool tracked = m_tracker->isHmdTracked();
     if (!tracked) ImGui::BeginDisabled();
     if (ImGui::Button("Recalibrate")) recalibrate();
     if (!tracked) ImGui::EndDisabled();
 
-    ImGui::SameLine();
-    ImGui::Spacing();
-    ImGui::SameLine();
-
-    // FR-34 stubs — Save/Load deferred to Phase 4.
+    // Row 3: FR-34 stubs.
     ImGui::BeginDisabled();
     ImGui::Button("Save Layout");
     ImGui::SameLine();
