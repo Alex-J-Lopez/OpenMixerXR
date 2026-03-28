@@ -48,6 +48,7 @@ set(OPENMIXER_SOURCES
     src/PassthroughBox.cpp
     src/ChromaRenderer.cpp
     src/DeviceTracker.cpp
+    src/GrabController.cpp
     src/OverlayManager.cpp
     src/DashboardUI.cpp
     ${IMGUI_SOURCES}
@@ -60,6 +61,7 @@ set(OPENMIXER_HEADERS
     src/PassthroughBox.h
     src/ChromaRenderer.h
     src/DeviceTracker.h
+    src/GrabController.h
     src/OverlayManager.h
     src/DashboardUI.h
 )

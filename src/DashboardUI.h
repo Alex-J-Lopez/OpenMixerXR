@@ -10,6 +10,7 @@
 
 #include "OverlayManager.h"
 #include "DeviceTracker.h"
+#include "GrabController.h"
 
 // DashboardUI — SteamVR dashboard panel driven by Dear ImGui.
 //
@@ -34,11 +35,12 @@ public:
     DashboardUI& operator=(const DashboardUI&) = delete;
 
     // device and context must outlive this object (owned by D3D11Backend).
-    // overlayMgr and tracker must outlive this object (owned by main).
+    // overlayMgr, tracker, and grabCtrl must outlive this object (owned by main).
     bool init(ID3D11Device*        device,
               ID3D11DeviceContext* context,
               OverlayManager&      overlayMgr,
-              DeviceTracker&       tracker);
+              DeviceTracker&       tracker,
+              GrabController&      grabCtrl);
     void shutdown();
 
     // Feed system-wide VR events (VREvent_DashboardActivated/Deactivated).
@@ -67,6 +69,7 @@ private:
     ID3D11DeviceContext* m_context    = nullptr;
     OverlayManager*      m_overlayMgr = nullptr;
     DeviceTracker*       m_tracker    = nullptr;
+    GrabController*      m_grab       = nullptr;
 
     // Two handles from CreateDashboardOverlay (Phase 2 finding #5).
     vr::VROverlayHandle_t m_mainHandle      = vr::k_ulOverlayHandleInvalid;

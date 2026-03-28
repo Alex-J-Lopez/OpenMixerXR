@@ -19,6 +19,7 @@
 #include "D3D11Backend.h"
 #include "OverlayManager.h"
 #include "DeviceTracker.h"
+#include "GrabController.h"
 #include "PassthroughBox.h"
 #include "DashboardUI.h"
 
@@ -132,7 +133,7 @@ static std::array<PassthroughBox, 3> makeDefaultBoxes() {
 
 int main() {
     Logger::init();
-    LOG_INFO("OpenMixer VR starting (Phase 3)");
+    LOG_INFO("OpenMixer VR starting (Phase 3.5)");
 
     const std::string manifestPath =
         (std::filesystem::path(executableDir()) / "manifest.vrmanifest").string();
@@ -155,8 +156,7 @@ int main() {
 
     // ── 3. Initialise OverlayManager and add the three boxes ──────────────────
     OverlayManager overlayManager;
-    if (!overlayManager.init(d3d.getDevice(), d3d.getContext(),
-                              Config::TEXTURE_WIDTH, Config::TEXTURE_HEIGHT)) {
+    if (!overlayManager.init(d3d.getDevice(), d3d.getContext())) {
         vr::VR_Shutdown();
         return 1;
     }
@@ -172,9 +172,11 @@ int main() {
     LOG_INFO("{} boxes registered", overlayManager.boxCount());
 
     // ── 4. Initialise DashboardUI ──────────────────────────────────────────────
-    DeviceTracker tracker;
-    DashboardUI   dashboardUI;
-    if (!dashboardUI.init(d3d.getDevice(), d3d.getContext(), overlayManager, tracker)) {
+    DeviceTracker  tracker;
+    GrabController grabController;
+    DashboardUI    dashboardUI;
+    if (!dashboardUI.init(d3d.getDevice(), d3d.getContext(),
+                          overlayManager, tracker, grabController)) {
         LOG_ERROR("DashboardUI init failed");
         overlayManager.shutdown();
         vr::VR_Shutdown();
@@ -237,6 +239,9 @@ int main() {
 
         // Update HMD pose then run per-box frame update and dashboard render.
         tracker.update(vrSystem);
+        // GrabController runs after tracker.update() so it has fresh poses,
+        // and before overlayManager.frame() so updated positions are applied.
+        grabController.tick(tracker, overlayManager);
         overlayManager.frame(tracker.getHmdPosition());
         dashboardUI.pollInput();
         dashboardUI.render();

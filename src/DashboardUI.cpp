@@ -2,6 +2,7 @@
 #include "Config.h"
 #include "Logger.h"
 #include "MathHelpers.h"
+#include "GrabController.h"
 
 #include <imgui_impl_dx11.h>
 #include <glm/gtc/quaternion.hpp>
@@ -54,11 +55,13 @@ static bool StepFloat(const char* id, const char* label,
 bool DashboardUI::init(ID3D11Device*        device,
                         ID3D11DeviceContext* context,
                         OverlayManager&      overlayMgr,
-                        DeviceTracker&       tracker) {
+                        DeviceTracker&       tracker,
+                        GrabController&      grabCtrl) {
     m_device     = device;
     m_context    = context;
     m_overlayMgr = &overlayMgr;
     m_tracker    = &tracker;
+    m_grab       = &grabCtrl;
 
     if (!createRenderTarget())      return false;
     if (!createDashboardHandles())  return false;
@@ -336,7 +339,7 @@ void DashboardUI::buildUI() {
 
     ImGui::Text("OpenMixer VR");
     ImGui::SameLine();
-    ImGui::TextDisabled("  Phase 3");
+    ImGui::TextDisabled("  Phase 3.5");
     ImGui::Separator();
 
     const float leftW  = 240.0f;
@@ -461,6 +464,41 @@ void DashboardUI::buildUI() {
             ImGui::EndDisabled();
             ImGui::SameLine();
             ImGui::TextDisabled("(tracking lost)");
+        }
+
+        ImGui::Separator();
+
+        // ── Controller grab (Phase 3.5) ───────────────────────────────────────
+        // "Arm" arms the grab for this box; the box latches to the right
+        // controller on the next grip press and follows it until grip release.
+        const bool rightTracked  = m_tracker->isRightControllerTracked();
+        const bool grabForThis   = (m_grab->isArmed() || m_grab->isActive())
+                                    && m_grab->boxIndex() == m_selectedBox;
+        const bool grabElsewhere = (m_grab->isArmed() || m_grab->isActive())
+                                    && !grabForThis;
+
+        if (!rightTracked || grabElsewhere) ImGui::BeginDisabled();
+        if (ImGui::Button("Grab with right controller")) {
+            if (!grabForThis)
+                m_grab->arm(m_selectedBox);
+        }
+        if (!rightTracked || grabElsewhere) ImGui::EndDisabled();
+
+        if (!rightTracked) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("(controller not tracked)");
+        } else if (grabElsewhere) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("(grabbing another box)");
+        }
+
+        if (grabForThis) {
+            ImGui::SameLine();
+            if (m_grab->isActive())
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "GRABBING");
+            else
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "ARMED — squeeze grip");
+            if (ImGui::Button("Release")) m_grab->cancel();
         }
     } else {
         ImGui::TextDisabled("No box selected");

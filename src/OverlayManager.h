@@ -26,8 +26,8 @@ public:
     OverlayManager& operator=(const OverlayManager&) = delete;
 
     // device and context must outlive this manager (owned by D3D11Backend).
-    bool init(ID3D11Device* device, ID3D11DeviceContext* context,
-              uint32_t texW, uint32_t texH);
+    // Texture dimensions are computed per-box from scaleWidth:scaleHeight (Phase 3.5).
+    bool init(ID3D11Device* device, ID3D11DeviceContext* context);
 
     // Destroy all overlay handles and chroma renderers.
     void shutdown();
@@ -74,22 +74,33 @@ public:
     void setHideBoxesWhenDashboard(bool hide) { m_hideBoxesWhenDashboard = hide; }
     bool getHideBoxesWhenDashboard() const     { return m_hideBoxesWhenDashboard; }
 
+    // Compute D3D11 texture dimensions for a box with the given physical size.
+    // The longest dimension is clamped to MAX_TEX_DIM (512 px); the shorter
+    // dimension preserves the scaleWidth:scaleHeight aspect ratio.
+    // Minimum dimension is 16 px to avoid D3D11 errors on extreme ratios.
+    static std::pair<uint32_t, uint32_t> computeTexDims(float scaleWidth, float scaleHeight);
+
 private:
     struct Entry {
         PassthroughBox        box;
         ChromaRenderer        chroma;
         vr::VROverlayHandle_t handle = vr::k_ulOverlayHandleInvalid;
+        // Tracks the texture dimensions currently allocated in chroma.
+        // Compared against computeTexDims() each frame to detect aspect changes.
+        uint32_t              texW = 512;
+        uint32_t              texH = 512;
     };
 
     std::vector<Entry> m_entries;
 
     ID3D11Device*        m_device  = nullptr;
     ID3D11DeviceContext* m_context = nullptr;
-    uint32_t m_texW    = 512;
-    uint32_t m_texH    = 512;
     bool     m_initialized          = false;
     bool     m_dashboardOpen        = false;
-    bool     m_hideBoxesWhenDashboard = false;   // controlled by dashboard UI toggle
+    bool     m_hideBoxesWhenDashboard = false;
+
+    static constexpr uint32_t MAX_TEX_DIM = 512;
+    static constexpr uint32_t MIN_TEX_DIM = 16;
 
     void destroyEntry(Entry& e);
     bool createOverlayHandle(Entry& e);
