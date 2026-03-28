@@ -20,6 +20,7 @@
 #include "OverlayManager.h"
 #include "DeviceTracker.h"
 #include "GrabController.h"
+#include "LayoutStore.h"
 #include "PassthroughBox.h"
 #include "DashboardUI.h"
 
@@ -133,7 +134,7 @@ static std::array<PassthroughBox, 3> makeDefaultBoxes() {
 
 int main() {
     Logger::init();
-    LOG_INFO("OpenMixer XR starting (Phase 3.5)");
+    LOG_INFO("OpenMixer XR starting (Phase 4)");
 
     const std::string manifestPath =
         (std::filesystem::path(executableDir()) / "manifest.vrmanifest").string();
@@ -162,26 +163,31 @@ int main() {
     }
     overlayManager.reserveBoxes(64);   // prevent reallocation while UI holds pointers
 
-    for (const auto& box : makeDefaultBoxes()) {
-        if (!overlayManager.addBox(box)) {
-            LOG_ERROR("Failed to add box '{}'", box.id);
-            vr::VR_Shutdown();
-            return 1;
-        }
-    }
-    LOG_INFO("{} boxes registered", overlayManager.boxCount());
-
-    // ── 4. Initialise DashboardUI ──────────────────────────────────────────────
+    // ── 4. LayoutStore + DashboardUI ──────────────────────────────────────────
+    LayoutStore    layoutStore;
     DeviceTracker  tracker;
     GrabController grabController;
     DashboardUI    dashboardUI;
     if (!dashboardUI.init(d3d.getDevice(), d3d.getContext(),
-                          overlayManager, tracker, grabController)) {
+                          overlayManager, tracker, grabController, layoutStore)) {
         LOG_ERROR("DashboardUI init failed");
         overlayManager.shutdown();
         vr::VR_Shutdown();
         return 1;
     }
+
+    // Try to restore last session; fall back to hardcoded defaults on first launch.
+    if (!dashboardUI.tryRestoreSession()) {
+        LOG_INFO("No last session — loading default boxes");
+        for (const auto& box : makeDefaultBoxes()) {
+            if (!overlayManager.addBox(box)) {
+                LOG_ERROR("Failed to add box '{}'", box.id);
+                vr::VR_Shutdown();
+                return 1;
+            }
+        }
+    }
+    LOG_INFO("{} boxes registered", overlayManager.boxCount());
 
     // ── 5. Main loop ──────────────────────────────────────────────────────────
     bool running = true;
@@ -230,7 +236,8 @@ int main() {
             overlayManager.handleEvent(event);
             dashboardUI.handleSystemEvent(event);
             if (event.eventType == vr::VREvent_Quit) {
-                LOG_INFO("VREvent_Quit — shutting down");
+                LOG_INFO("VREvent_Quit — saving session and shutting down");
+                dashboardUI.saveSession();
                 vr::VRSystem()->AcknowledgeQuit_Exiting();
                 running = false;
             }

@@ -2,6 +2,7 @@
 #include <d3d11.h>
 #include <glm/glm.hpp>
 #include <openvr.h>
+#include <array>
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -13,8 +14,21 @@
 //
 // Ownership model:
 //   - D3D11 device + context  →  owned by D3D11Backend, passed in via init().
-//   - Per-box ChromaRenderer  →  owned here (one per Entry).
-//   - VROverlayHandle_t       →  owned here; destroyed before VR_Shutdown.
+//   - Per-face ChromaRenderer →  owned here (up to 6 per box).
+//   - VROverlayHandle_t       →  owned here; all destroyed before VR_Shutdown.
+//
+// 3-D cuboid support (Phase 4.5):
+//   When scaleDepth == 0 a box is a flat quad — only faces[0] (Front) is active.
+//   This is identical to Phase 3.5 behaviour.
+//   When scaleDepth >= MIN_DEPTH all six faces are active:
+//     [0] Front   (at +depth/2 along box local Z, normal +Z)
+//     [1] Back    (at -depth/2 along box local Z, normal -Z, 180° Y)
+//     [2] Left    (at -width/2 along box local X, normal -X, -90° Y)
+//     [3] Right   (at +width/2 along box local X, normal +X, +90° Y)
+//     [4] Top     (at +height/2 along box local Y, normal +Y, -90° X)
+//     [5] Bottom  (at -height/2 along box local Y, normal -Y, +90° X)
+//   Faces 1-5 are created/destroyed in frame() when depth crosses MIN_DEPTH.
+//   The SteamVR overlay limit (~64) is enforced by MAX_BOXES.
 //
 // Threading: single main thread only (Phase 2 decision; see main.cpp).
 class OverlayManager {
@@ -25,83 +39,106 @@ public:
     OverlayManager(const OverlayManager&)            = delete;
     OverlayManager& operator=(const OverlayManager&) = delete;
 
-    // device and context must outlive this manager (owned by D3D11Backend).
-    // Texture dimensions are computed per-box from scaleWidth:scaleHeight (Phase 3.5).
     bool init(ID3D11Device* device, ID3D11DeviceContext* context);
 
-    // Destroy all overlay handles and chroma renderers.
+    // Destroy all overlay handles and chroma renderers, keeping the manager initialised.
+    // Call when replacing all boxes (e.g. layout load).
+    void clearBoxes();
+
+    // Full teardown — marks the manager uninitialised.
     void shutdown();
 
-    // Creates an OpenVR overlay + ChromaRenderer for the given box.
-    // Returns false on overlay creation failure.
+    // Creates overlay handles + ChromaRenderers for a new box.
+    // Returns false if the MAX_BOXES limit is reached or VR overlay creation fails.
     bool addBox(const PassthroughBox& box);
 
-    // Destroys a box's overlay handle and chroma renderer, then removes it.
+    // Destroys the given box's handles and renderers then removes it.
     void removeBox(const std::string& id);
 
-    // Per-frame update.
-    //   - Updates world transform, distance-based opacity, and chroma texture for every
-    //     visible box. No heap allocation occurs inside this loop (SRD §6.1).
-    //   - hmdPos is the HMD world position (standing universe) for opacity computation.
+    // Per-frame: update transforms, opacity, textures for all visible boxes.
+    // Creates or destroys depth faces when scaleDepth crosses MIN_DEPTH.
+    // hmdPos is the HMD world position (standing universe) for opacity.
     void frame(const glm::vec3& hmdPos);
 
-    // Feed all VR events here.
-    //   Handles: VREvent_DashboardActivated / VREvent_DashboardDeactivated.
     void handleEvent(const vr::VREvent_t& event);
 
-    // Close VR overlay handles without destroying ChromaRenderers or box data.
-    // Call before VR_Shutdown; call reopenOverlays() after VR_Init to restore.
+    // Close all VR overlay handles (call before VR_Shutdown).
+    // ChromaRenderers and box data are preserved for reopenOverlays().
     void closeOverlays();
 
-    // Recreate VR overlay handles for all existing entries after VR_Init.
-    // ChromaRenderers are reused; textures are marked dirty so they re-upload.
+    // Recreate all VR overlay handles after VR_Init.
     bool reopenOverlays();
 
     std::size_t boxCount() const { return m_entries.size(); }
 
-    // Direct mutable access to box data by index for DashboardUI.
-    // Pointer is valid while no addBox/removeBox is called.
-    // Call reserveBoxes() at startup to prevent reallocation invalidating pointers.
     PassthroughBox*       boxAt(std::size_t i);
     const PassthroughBox* boxAt(std::size_t i) const;
 
-    // Pre-allocate internal storage so addBox never reallocates (Phase 2 finding #9).
     void reserveBoxes(std::size_t n) { m_entries.reserve(n); }
 
-    // When false (default): world boxes remain visible while the dashboard is open,
-    // so the user can position them with the dashboard UI in view.
-    // When true: boxes are hidden whenever the dashboard is active.
     void setHideBoxesWhenDashboard(bool hide) { m_hideBoxesWhenDashboard = hide; }
     bool getHideBoxesWhenDashboard() const     { return m_hideBoxesWhenDashboard; }
 
-    // Compute D3D11 texture dimensions for a box with the given physical size.
-    // The longest dimension is clamped to MAX_TEX_DIM (512 px); the shorter
-    // dimension preserves the scaleWidth:scaleHeight aspect ratio.
-    // Minimum dimension is 16 px to avoid D3D11 errors on extreme ratios.
-    static std::pair<uint32_t, uint32_t> computeTexDims(float scaleWidth, float scaleHeight);
+    // ── Static geometry helpers (also used by cuboid_transform_test) ─────────
+
+    // Returns 6 column-major world-space matrices (one per face).
+    // Face local +Z is the face's outward normal (the "visible" side in OpenVR).
+    // Position is the face centre in world space.
+    static std::array<glm::mat4, 6> computeFaceWorldMatrices(const PassthroughBox& box);
+
+    // Physical overlay width (meters) for SetOverlayWidthInMeters.
+    static float facePhysWidth(const PassthroughBox& box, int faceIdx);
+
+    // Physical height (meters) for the texture aspect ratio calculation.
+    static float facePhysHeight(const PassthroughBox& box, int faceIdx);
+
+    // Texture dimension helper (unchanged from Phase 3.5).
+    static std::pair<uint32_t, uint32_t> computeTexDims(float physW, float physH);
+
+    // ── Constants ─────────────────────────────────────────────────────────────
+    // Depth below this threshold: flat mode (front face only).
+    static constexpr float       MIN_DEPTH = 0.01f;
+    // Hard limit enforced in addBox() to stay within SteamVR's overlay budget:
+    //   2 dashboard handles + MAX_BOXES * 6 = 62 ≤ 64.
+    static constexpr std::size_t MAX_BOXES = 10;
 
 private:
-    struct Entry {
-        PassthroughBox        box;
-        ChromaRenderer        chroma;
+    // One OpenVR overlay + one ChromaRenderer.
+    // Used for each of the 6 faces of a PassthroughBox.
+    struct FaceSlot {
         vr::VROverlayHandle_t handle = vr::k_ulOverlayHandleInvalid;
-        // Tracks the texture dimensions currently allocated in chroma.
-        // Compared against computeTexDims() each frame to detect aspect changes.
-        uint32_t              texW = 512;
-        uint32_t              texH = 512;
+        ChromaRenderer        chroma;
+        uint32_t              texW   = 512;
+        uint32_t              texH   = 512;
+    };
+
+    struct Entry {
+        PassthroughBox box;
+        FaceSlot       faces[6];
+        // faces[0] = Front (always active).
+        // faces[1..5] = Back/Left/Right/Top/Bottom (active when scaleDepth >= MIN_DEPTH).
     };
 
     std::vector<Entry> m_entries;
 
-    ID3D11Device*        m_device  = nullptr;
-    ID3D11DeviceContext* m_context = nullptr;
-    bool     m_initialized          = false;
-    bool     m_dashboardOpen        = false;
-    bool     m_hideBoxesWhenDashboard = false;
+    ID3D11Device*        m_device              = nullptr;
+    ID3D11DeviceContext* m_context             = nullptr;
+    bool                 m_initialized         = false;
+    bool                 m_dashboardOpen        = false;
+    bool                 m_hideBoxesWhenDashboard = false;
 
     static constexpr uint32_t MAX_TEX_DIM = 512;
     static constexpr uint32_t MIN_TEX_DIM = 16;
 
+    // Create the VR overlay handle for a single face slot.
+    bool createFaceHandle(Entry& e, int faceIdx);
+
+    // Initialise a face slot: create ChromaRenderer + VR handle + initial texture submit.
+    bool initFace(Entry& e, int faceIdx);
+
+    // Destroy a face slot's VR handle and ChromaRenderer.
+    void destroyFace(FaceSlot& f);
+
+    // Destroy all face slots of an Entry.
     void destroyEntry(Entry& e);
-    bool createOverlayHandle(Entry& e);
 };

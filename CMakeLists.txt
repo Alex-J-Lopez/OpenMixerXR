@@ -50,6 +50,7 @@ set(OPENMIXER_SOURCES
     src/DeviceTracker.cpp
     src/GrabController.cpp
     src/OverlayManager.cpp
+    src/LayoutStore.cpp
     src/DashboardUI.cpp
     ${IMGUI_SOURCES}
 )
@@ -63,6 +64,7 @@ set(OPENMIXER_HEADERS
     src/DeviceTracker.h
     src/GrabController.h
     src/OverlayManager.h
+    src/LayoutStore.h
     src/DashboardUI.h
 )
 
@@ -72,6 +74,7 @@ target_include_directories(OpenMixerXR PRIVATE
     src
     ${IMGUI_DIR}
     ${IMGUI_DIR}/backends
+    ${CMAKE_SOURCE_DIR}/third_party/json/include   # nlohmann/json header-only
 )
 
 target_link_libraries(OpenMixerXR PRIVATE
@@ -125,4 +128,61 @@ target_compile_definitions(box_transform_test PRIVATE
 
 if(MSVC)
     target_compile_options(box_transform_test PRIVATE /W4 /utf-8 /wd4201)
+endif()
+
+# ── layout_serialization_test ──────────────────────────────────────────────────
+# Tests LayoutStore round-trip without a VR runtime or D3D11 (§3.4, §11.1).
+add_executable(layout_serialization_test
+    tests/layout_serialization_test.cpp
+    src/LayoutStore.cpp
+)
+
+target_include_directories(layout_serialization_test PRIVATE
+    src
+    ${CMAKE_SOURCE_DIR}/third_party/json/include
+)
+
+target_link_libraries(layout_serialization_test PRIVATE
+    spdlog::spdlog_header_only
+)
+
+target_compile_definitions(layout_serialization_test PRIVATE
+    OPENVR_BUILD_STATIC
+    $<$<EQUAL:${CMAKE_SIZEOF_VOID_P},8>:WIN64>
+)
+
+if(MSVC)
+    target_compile_options(layout_serialization_test PRIVATE /W4 /utf-8 /wd4201)
+endif()
+
+# ── cuboid_transform_test ──────────────────────────────────────────────────────
+# Tests OverlayManager::computeFaceWorldMatrices without a VR runtime or D3D11.
+add_executable(cuboid_transform_test
+    tests/cuboid_transform_test.cpp
+    src/OverlayManager.cpp
+    src/ChromaRenderer.cpp
+    src/PassthroughBox.cpp
+)
+
+target_include_directories(cuboid_transform_test PRIVATE
+    src
+    ${CMAKE_SOURCE_DIR}/third_party/openvr/headers
+    ${CMAKE_SOURCE_DIR}/third_party/json/include
+)
+
+target_link_libraries(cuboid_transform_test PRIVATE
+    openvr_api64
+    spdlog::spdlog_header_only
+    glm::glm
+    d3d11
+    dxgi
+)
+
+target_compile_definitions(cuboid_transform_test PRIVATE
+    OPENVR_BUILD_STATIC
+    $<$<EQUAL:${CMAKE_SIZEOF_VOID_P},8>:WIN64>
+)
+
+if(MSVC)
+    target_compile_options(cuboid_transform_test PRIVATE /W4 /utf-8 /wd4201)
 endif()
