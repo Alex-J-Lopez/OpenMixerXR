@@ -155,7 +155,7 @@ bool DashboardUI::createRenderTarget() {
 bool DashboardUI::createDashboardHandles() {
     vr::EVROverlayError err = vr::VROverlay()->CreateDashboardOverlay(
         "openmixer.dashboard",
-        "OpenMixer VR",
+        "OpenMixer XR",
         &m_mainHandle,
         &m_thumbnailHandle
     );
@@ -337,7 +337,7 @@ void DashboardUI::buildUI() {
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoScrollbar);
 
-    ImGui::Text("OpenMixer VR");
+    ImGui::Text("OpenMixer XR");
     ImGui::SameLine();
     ImGui::TextDisabled("  Phase 3.5");
     ImGui::Separator();

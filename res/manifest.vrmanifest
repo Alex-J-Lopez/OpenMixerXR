@@ -2,14 +2,14 @@
   "source": "builtin",
   "applications": [
     {
-      "app_key": "openmixer.vr.overlay",
+      "app_key": "openmixer.xr.overlay",
       "launch_type": "binary",
-      "binary_path_windows": "OpenMixerVR.exe",
+      "binary_path_windows": "OpenMixerXR.exe",
       "is_dashboard_overlay": true,
       "image_path": "dashboard_icon.png",
       "strings": {
         "en_us": {
-          "name": "OpenMixer VR",
+          "name": "OpenMixer XR",
           "description": "Passthrough box overlay for Meta Quest 3 via Virtual Desktop chroma key"
         }
       }

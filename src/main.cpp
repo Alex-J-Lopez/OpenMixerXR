@@ -133,7 +133,7 @@ static std::array<PassthroughBox, 3> makeDefaultBoxes() {
 
 int main() {
     Logger::init();
-    LOG_INFO("OpenMixer VR starting (Phase 3.5)");
+    LOG_INFO("OpenMixer XR starting (Phase 3.5)");
 
     const std::string manifestPath =
         (std::filesystem::path(executableDir()) / "manifest.vrmanifest").string();

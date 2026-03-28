@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(OpenMixerVR VERSION 0.1.0 LANGUAGES CXX)
+project(OpenMixerXR VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -66,15 +66,15 @@ set(OPENMIXER_HEADERS
     src/DashboardUI.h
 )
 
-add_executable(OpenMixerVR ${OPENMIXER_SOURCES} ${OPENMIXER_HEADERS})
+add_executable(OpenMixerXR ${OPENMIXER_SOURCES} ${OPENMIXER_HEADERS})
 
-target_include_directories(OpenMixerVR PRIVATE
+target_include_directories(OpenMixerXR PRIVATE
     src
     ${IMGUI_DIR}
     ${IMGUI_DIR}/backends
 )
 
-target_link_libraries(OpenMixerVR PRIVATE
+target_link_libraries(OpenMixerXR PRIVATE
     openvr_api64                # OpenVR static (Win64 target name)
     d3d11                       # DirectX 11
     dxgi                        # DXGI (required by D3D11)
@@ -82,13 +82,13 @@ target_link_libraries(OpenMixerVR PRIVATE
     glm::glm                    # GLM math
 )
 
-target_compile_definitions(OpenMixerVR PRIVATE
+target_compile_definitions(OpenMixerXR PRIVATE
     OPENVR_BUILD_STATIC   # tell openvr.h we're linking the static lib, not the DLL
     $<$<EQUAL:${CMAKE_SIZEOF_VOID_P},8>:WIN64>
 )
 
 if(MSVC)
-    target_compile_options(OpenMixerVR PRIVATE
+    target_compile_options(OpenMixerXR PRIVATE
         /W4         # high warning level
         /utf-8      # source files are UTF-8
         /MP         # parallel compilation
@@ -97,14 +97,14 @@ if(MSVC)
 endif()
 
 # ── Post-build: copy resources next to the executable ─────────────────────────
-add_custom_command(TARGET OpenMixerVR POST_BUILD
+add_custom_command(TARGET OpenMixerXR POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/res/manifest.vrmanifest"
-        "$<TARGET_FILE_DIR:OpenMixerVR>/manifest.vrmanifest"
+        "$<TARGET_FILE_DIR:OpenMixerXR>/manifest.vrmanifest"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/res/dashboard_icon.png"
-        "$<TARGET_FILE_DIR:OpenMixerVR>/dashboard_icon.png"
-    COMMENT "Copying OpenMixerVR resources to output directory"
+        "$<TARGET_FILE_DIR:OpenMixerXR>/dashboard_icon.png"
+    COMMENT "Copying OpenMixerXR resources to output directory"
 )
 
 # ── Unit tests ────────────────────────────────────────────────────────────────

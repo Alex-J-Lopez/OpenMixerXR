@@ -4,7 +4,7 @@
 namespace Config {
 
     // ── App registration ──────────────────────────────────────────────────────
-    inline constexpr const char* APP_KEY            = "openmixer.vr.overlay";
+    inline constexpr const char* APP_KEY            = "openmixer.xr.overlay";
     inline constexpr const char* OVERLAY_KEY_PREFIX = "openmixer.box.";
 
     // ── Default chroma color (#00FF80 to match Virtual Desktop default) ────────
