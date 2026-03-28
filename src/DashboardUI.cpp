@@ -5,7 +5,49 @@
 
 #include <imgui_impl_dx11.h>
 #include <glm/gtc/quaternion.hpp>
+#include <algorithm>
 #include <cstdio>
+
+// ── UI helper ─────────────────────────────────────────────────────────────────
+
+// Renders:  Label     [−]  <DragFloat>  [+]
+//
+// The [−]/[+] buttons adjust by `step` each click, making precise edits easy
+// with a VR laser pointer. The DragFloat still allows freehand dragging for
+// coarser/faster changes.
+static bool StepFloat(const char* id, const char* label,
+                       float* v, float step, float vmin, float vmax,
+                       const char* fmt) {
+    bool changed = false;
+
+    const float btnW  = ImGui::GetFrameHeight();
+    const float labelW = 90.0f;
+    const float dragW  = std::max(
+        ImGui::GetContentRegionAvail().x - labelW - (btnW + 4.f) * 2,
+        60.f);
+
+    ImGui::PushID(id);
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("%s", label);
+    ImGui::SameLine(labelW);
+
+    if (ImGui::Button("-", ImVec2(btnW, 0.f))) {
+        *v = std::max(vmin, *v - step);
+        changed = true;
+    }
+    ImGui::SameLine(0.f, 2.f);
+    ImGui::SetNextItemWidth(dragW);
+    if (ImGui::DragFloat("##v", v, step * 0.2f, vmin, vmax, fmt))
+        changed = true;
+    ImGui::SameLine(0.f, 2.f);
+    if (ImGui::Button("+", ImVec2(btnW, 0.f))) {
+        *v = std::min(vmax, *v + step);
+        changed = true;
+    }
+
+    ImGui::PopID();
+    return changed;
+}
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
@@ -379,19 +421,19 @@ void DashboardUI::buildUI() {
 
         ImGui::Separator();
 
-        // FR-03: position.
-        ImGui::DragFloat("Pos X", &sel->posX, 0.01f, -10.f, 10.f, "%.3f m");
-        ImGui::DragFloat("Pos Y", &sel->posY, 0.01f, -10.f, 10.f, "%.3f m");
-        ImGui::DragFloat("Pos Z", &sel->posZ, 0.01f, -10.f, 10.f, "%.3f m");
+        // FR-03: position (5 cm per click).
+        StepFloat("posx", "Pos X", &sel->posX, 0.05f, -10.f, 10.f, "%.3f m");
+        StepFloat("posy", "Pos Y", &sel->posY, 0.05f, -10.f, 10.f, "%.3f m");
+        StepFloat("posz", "Pos Z", &sel->posZ, 0.05f, -10.f, 10.f, "%.3f m");
 
-        // FR-04: rotation (Euler degrees, YXZ convention — Phase 2 finding #6).
-        ImGui::DragFloat("Yaw",   &sel->rotYaw,   0.5f, -180.f, 180.f, "%.1f deg");
-        ImGui::DragFloat("Pitch", &sel->rotPitch, 0.5f,  -90.f,  90.f, "%.1f deg");
-        ImGui::DragFloat("Roll",  &sel->rotRoll,  0.5f, -180.f, 180.f, "%.1f deg");
+        // FR-04: rotation (5° per click, YXZ convention — Phase 2 finding #6).
+        StepFloat("yaw",   "Yaw",   &sel->rotYaw,   5.f, -180.f, 180.f, "%.1f deg");
+        StepFloat("pitch", "Pitch", &sel->rotPitch, 5.f,  -90.f,  90.f, "%.1f deg");
+        StepFloat("roll",  "Roll",  &sel->rotRoll,  5.f, -180.f, 180.f, "%.1f deg");
 
-        // FR-05: scale.
-        ImGui::DragFloat("Width",  &sel->scaleWidth,  0.01f, 0.05f, 5.f, "%.2f m");
-        ImGui::DragFloat("Height", &sel->scaleHeight, 0.01f, 0.05f, 5.f, "%.2f m");
+        // FR-05: scale (5 cm per click).
+        StepFloat("width",  "Width",  &sel->scaleWidth,  0.05f, 0.05f, 5.f, "%.2f m");
+        StepFloat("height", "Height", &sel->scaleHeight, 0.05f, 0.05f, 5.f, "%.2f m");
 
         ImGui::Separator();
 
@@ -403,11 +445,11 @@ void DashboardUI::buildUI() {
             sel->chromaB = chromaColor[2];
         }
 
-        // Opacity fade parameters.
-        ImGui::DragFloat("Fade near", &sel->fadeNearMeters, 0.01f, 0.0f, sel->fadeFarMeters, "%.2f m");
-        ImGui::DragFloat("Fade far",  &sel->fadeFarMeters,  0.01f, sel->fadeNearMeters, 10.f, "%.2f m");
-        ImGui::DragFloat("Min alpha", &sel->minOpacity, 0.01f, 0.f, sel->maxOpacity, "%.2f");
-        ImGui::DragFloat("Max alpha", &sel->maxOpacity, 0.01f, sel->minOpacity, 1.f, "%.2f");
+        // Opacity fade parameters (5 cm / 0.05 opacity per click).
+        StepFloat("fnear", "Fade near", &sel->fadeNearMeters, 0.05f, 0.f,              sel->fadeFarMeters, "%.2f m");
+        StepFloat("ffar",  "Fade far",  &sel->fadeFarMeters,  0.05f, sel->fadeNearMeters, 10.f, "%.2f m");
+        StepFloat("minalpha", "Min alpha", &sel->minOpacity, 0.05f, 0.f, sel->maxOpacity, "%.2f");
+        StepFloat("maxalpha", "Max alpha", &sel->maxOpacity, 0.05f, sel->minOpacity, 1.f, "%.2f");
 
         ImGui::Separator();
 
