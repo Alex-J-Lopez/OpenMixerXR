@@ -127,4 +127,5 @@ private:
     int                      m_selectedLayout     = -1;
     std::vector<std::string> m_layoutList;
     std::string              m_layoutStatusMsg;   // prefix '!' = error (red), else success (green)
+    bool                     m_keyboardOpen       = false;
 };

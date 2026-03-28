@@ -235,6 +235,18 @@ void DashboardUI::pollInput() {
         case vr::VREvent_MouseButtonUp:
             io.AddMouseButtonEvent(0, false);
             break;
+        case vr::VREvent_KeyboardDone:
+            // User pressed Done/Enter on the SteamVR keyboard — read the typed text.
+            {
+                char text[128] = {};
+                vr::VROverlay()->GetKeyboardText(text, sizeof(text));
+                std::snprintf(m_layoutNameBuf, sizeof(m_layoutNameBuf), "%s", text);
+                m_keyboardOpen = false;
+            }
+            break;
+        case vr::VREvent_KeyboardClosed:
+            m_keyboardOpen = false;
+            break;
         default:
             break;
         }
@@ -580,8 +592,26 @@ void DashboardUI::buildUI() {
         ImGui::SameLine();
         ImGui::SetNextItemWidth(150.f);
         ImGui::InputText("##layoutname", m_layoutNameBuf, sizeof(m_layoutNameBuf));
+
+        // Keyboard button — opens the SteamVR virtual keyboard pre-filled with
+        // the current name so the user can type in VR without a physical keyboard.
         ImGui::SameLine();
-        ImGui::TextDisabled("Name");
+        if (m_keyboardOpen) ImGui::BeginDisabled();
+        if (ImGui::Button("KB")) {
+            vr::VROverlay()->ShowKeyboardForOverlay(
+                m_mainHandle,
+                vr::k_EGamepadTextInputModeNormal,
+                vr::k_EGamepadTextInputLineModeSingleLine,
+                vr::KeyboardFlag_Modal,
+                "Layout name",
+                sizeof(m_layoutNameBuf),
+                m_layoutNameBuf,
+                0);
+            m_keyboardOpen = true;
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Open SteamVR keyboard to type a layout name");
+        if (m_keyboardOpen) ImGui::EndDisabled();
 
         ImGui::SameLine();
         if (!hasName) ImGui::BeginDisabled();
