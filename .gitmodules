@@ -1,0 +1,12 @@
+[submodule "third_party/openvr"]
+	path = third_party/openvr
+	url = https://github.com/ValveSoftware/openvr
+[submodule "third_party/imgui"]
+	path = third_party/imgui
+	url = https://github.com/ocornut/imgui
+[submodule "third_party/json"]
+	path = third_party/json
+	url = https://github.com/nlohmann/json
+[submodule "third_party/spdlog"]
+	path = third_party/spdlog
+	url = https://github.com/gabime/spdlog
