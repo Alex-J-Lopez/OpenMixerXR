@@ -91,18 +91,18 @@ static void test_zero_depth_front_only() {
 }
 
 static void test_rotated_box_90y() {
-    // 90° yaw rotates the box: its local Z becomes world -X.
-    // The front face (at +depth/2 along local Z) should be at world X = posX - depth/2.
+    // R_y(+90°) maps local axes: +Z → world +X, +X → world -Z.
+    // The front face (at +depth/2 along local Z) should end up at world X = +depth/2.
     PassthroughBox b = makeUnitCuboid();
-    b.rotYaw = 90.f;   // 90° yaw
+    b.rotYaw = 90.f;
     const auto m = OverlayManager::computeFaceWorldMatrices(b);
 
-    // Front face position: rotated +Z local offset → -X world offset (approx -1,0,0)
-    CHECK(approx(facePos(m[0]).x, -1.f, 1e-3f), "rotated: Front face offset along world -X");
+    // Front face position: local +Z offset rotated by +90° yaw → world +X offset (+1, 0, 0)
+    CHECK(approx(facePos(m[0]).x, +1.f, 1e-3f), "rotated: Front face offset along world +X");
     CHECK(approx(facePos(m[0]).z,  0.f, 1e-3f), "rotated: Front face z ≈ 0");
 
-    // Front face normal should point along world -X (local +Z rotated 90° yaw).
-    CHECK(approx(faceNormal(m[0]).x, -1.f, 1e-3f), "rotated: Front normal → world -X");
+    // Front face normal: local +Z rotated by +90° yaw → world +X
+    CHECK(approx(faceNormal(m[0]).x, +1.f, 1e-3f), "rotated: Front normal → world +X");
 }
 
 static void test_face_physical_dimensions() {

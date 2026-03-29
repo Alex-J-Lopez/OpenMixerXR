@@ -1,0 +1,61 @@
+name: Build (Windows Release)
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Windows x64 Release
+    runs-on: windows-latest
+
+    steps:
+      # ── 1. Checkout including all submodules ──────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive   # checks out imgui, openvr, spdlog, json
+
+      # ── 2. Configure CMake ────────────────────────────────────────────────────
+      # FetchContent downloads GLM at configure time; the network is available in CI.
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build `
+                -G "Visual Studio 17 2022" `
+                -A x64 `
+                -DCMAKE_BUILD_TYPE=Release
+
+      # ── 3. Build all targets (main exe + three test executables) ─────────────
+      - name: Build Release
+        run: cmake --build build --config Release --parallel
+
+      # ── 4. Run unit tests ─────────────────────────────────────────────────────
+      # Tests are pure-math / pure-serialization — no SteamVR runtime required.
+      - name: Run box_transform_test
+        run: build\Release\box_transform_test.exe
+
+      - name: Run layout_serialization_test
+        run: build\Release\layout_serialization_test.exe
+
+      # cuboid_transform_test links openvr_api64.lib but never calls VR_Init,
+      # so it is safe to run without a SteamVR installation.
+      - name: Run cuboid_transform_test
+        run: build\Release\cuboid_transform_test.exe
+
+      # ── 5. Collect artifacts ──────────────────────────────────────────────────
+      # Bundle the executable and resources needed for a manual install.
+      - name: Collect artifact files
+        run: |
+          New-Item -ItemType Directory -Force artifact | Out-Null
+          Copy-Item build\Release\OpenMixerXR.exe       artifact\
+          Copy-Item build\Release\manifest.vrmanifest   artifact\
+          Copy-Item build\Release\dashboard_icon.png    artifact\ -ErrorAction SilentlyContinue
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenMixerXR-win64-release
+          path: artifact\
+          retention-days: 30

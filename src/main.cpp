@@ -134,7 +134,7 @@ static std::array<PassthroughBox, 3> makeDefaultBoxes() {
 
 int main() {
     Logger::init();
-    LOG_INFO("OpenMixer XR starting (Phase 4)");
+    LOG_INFO("OpenMixer XR starting (Phase 5)");
 
     const std::string manifestPath =
         (std::filesystem::path(executableDir()) / "manifest.vrmanifest").string();
@@ -233,6 +233,7 @@ int main() {
         // Poll VR events.
         vr::VREvent_t event;
         while (vr::VRSystem()->PollNextEvent(&event, sizeof(event))) {
+            tracker.handleEvent(event);
             overlayManager.handleEvent(event);
             dashboardUI.handleSystemEvent(event);
             if (event.eventType == vr::VREvent_Quit) {
