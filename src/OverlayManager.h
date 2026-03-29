@@ -55,6 +55,11 @@ public:
     // Destroys the given box's handles and renderers then removes it.
     void removeBox(const std::string& id);
 
+    // Clone an existing box as a new entry with a fresh ID/name.
+    // The clone is offset by 0.1 m on X so it doesn't perfectly overlap the source.
+    // Returns false if the source ID is not found or MAX_BOXES is reached.
+    bool duplicateBox(const std::string& sourceId, const std::string& newId);
+
     // Per-frame: update transforms, opacity, textures for all visible boxes.
     // Creates or destroys depth faces when scaleDepth crosses MIN_DEPTH.
     // hmdPos is the HMD world position (standing universe) for opacity.

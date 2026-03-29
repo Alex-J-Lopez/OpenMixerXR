@@ -1,5 +1,6 @@
 #include "DeviceTracker.h"
 #include "MathHelpers.h"
+#include "Logger.h"
 
 void DeviceTracker::update(vr::IVRSystem* sys) {
     m_tracked       = false;
@@ -28,6 +29,7 @@ void DeviceTracker::update(vr::IVRSystem* sys) {
     // ── Right controller ──────────────────────────────────────────────────────
     const uint32_t rightIdx = sys->GetTrackedDeviceIndexForControllerRole(
         vr::TrackedControllerRole_RightHand);
+    m_rightIdx = rightIdx;
     if (rightIdx < vr::k_unMaxTrackedDeviceCount) {
         const auto& rp = poses[rightIdx];
         m_rightTracked = rp.bPoseIsValid &&
@@ -45,6 +47,7 @@ void DeviceTracker::update(vr::IVRSystem* sys) {
     // ── Left controller ───────────────────────────────────────────────────────
     const uint32_t leftIdx = sys->GetTrackedDeviceIndexForControllerRole(
         vr::TrackedControllerRole_LeftHand);
+    m_leftIdx = leftIdx;
     if (leftIdx < vr::k_unMaxTrackedDeviceCount) {
         const auto& lp = poses[leftIdx];
         m_leftTracked = lp.bPoseIsValid &&
@@ -56,6 +59,26 @@ void DeviceTracker::update(vr::IVRSystem* sys) {
                 m_leftGripping =
                     (state.ulButtonPressed &
                      vr::ButtonMaskFromId(vr::k_EButton_Grip)) != 0;
+        }
+    }
+}
+
+void DeviceTracker::handleEvent(const vr::VREvent_t& event) {
+    if (event.eventType == vr::VREvent_TrackedDeviceActivated) {
+        LOG_INFO("DeviceTracker: device {} connected", event.trackedDeviceIndex);
+    } else if (event.eventType == vr::VREvent_TrackedDeviceDeactivated) {
+        LOG_INFO("DeviceTracker: device {} disconnected", event.trackedDeviceIndex);
+        // Immediately clear state for the deactivated controller so that
+        // GrabController sees the loss in the same frame as the event.
+        if (event.trackedDeviceIndex == m_rightIdx) {
+            m_rightTracked  = false;
+            m_rightGripping = false;
+            m_rightIdx      = vr::k_unTrackedDeviceIndexInvalid;
+        }
+        if (event.trackedDeviceIndex == m_leftIdx) {
+            m_leftTracked  = false;
+            m_leftGripping = false;
+            m_leftIdx      = vr::k_unTrackedDeviceIndexInvalid;
         }
     }
 }

@@ -354,7 +354,7 @@ void DashboardUI::buildUI() {
 
     ImGui::Text("OpenMixer XR");
     ImGui::SameLine();
-    ImGui::TextDisabled("  Phase 4.5");
+    ImGui::TextDisabled("  Phase 5");
     ImGui::Separator();
 
     const float leftW  = 240.0f;
@@ -437,6 +437,20 @@ void DashboardUI::buildUI() {
             m_selectedBox = std::max(0, std::min(m_selectedBox, nBoxes - 2));
         }
     }
+    ImGui::SameLine();
+    if (atBoxLimit) ImGui::BeginDisabled();
+    if (ImGui::Button("Dup") && nBoxes > 0) {
+        // FR-11: clone selected box with a new ID, auto-select the clone.
+        const PassthroughBox* box =
+            m_overlayMgr->boxAt(static_cast<std::size_t>(m_selectedBox));
+        if (box) {
+            char idBuf[32];
+            std::snprintf(idBuf, sizeof(idBuf), "box%d", m_nextBoxId++);
+            if (m_overlayMgr->duplicateBox(box->id, idBuf))
+                m_selectedBox = nBoxes;   // the clone is appended; auto-select it
+        }
+    }
+    if (atBoxLimit) ImGui::EndDisabled();
 
     ImGui::EndChild();
 

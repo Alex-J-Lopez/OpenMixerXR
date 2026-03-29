@@ -232,6 +232,24 @@ void OverlayManager::removeBox(const std::string& id) {
     LOG_INFO("OverlayManager: box '{}' removed", id);
 }
 
+bool OverlayManager::duplicateBox(const std::string& sourceId, const std::string& newId) {
+    if (m_entries.size() >= MAX_BOXES) {
+        LOG_WARN("OverlayManager: MAX_BOXES ({}) reached — cannot duplicate '{}'", MAX_BOXES, sourceId);
+        return false;
+    }
+    for (const auto& e : m_entries) {
+        if (e.box.id == sourceId) {
+            PassthroughBox clone  = e.box;
+            clone.id              = newId;
+            clone.name            = clone.name + " Copy";
+            clone.posX           += 0.1f;    // small offset so the clone doesn't overlap exactly
+            return addBox(clone);
+        }
+    }
+    LOG_WARN("OverlayManager: duplicateBox — source '{}' not found", sourceId);
+    return false;
+}
+
 void OverlayManager::frame(const glm::vec3& hmdPos) {
     if (!m_initialized) return;
 
