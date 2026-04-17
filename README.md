@@ -176,7 +176,7 @@ change it per-box or globally from the dashboard.
 |---------|---------|---------|-----|
 | [OpenVR](https://github.com/ValveSoftware/openvr) | 2.5.1 | BSD-3-Clause | SteamVR overlay API |
 | [Dear ImGui](https://github.com/ocornut/imgui) | 1.91.x | MIT | Dashboard UI |
-| [GLM](https://github.com/g-truc/glm) | 0.9.9.8 | MIT | 3D math (matrices, quaternions) |
+| [GLM](https://github.com/g-truc/glm) | 1.0.1 | MIT | 3D math (matrices, quaternions) |
 | [spdlog](https://github.com/gabime/spdlog) | 1.x | MIT | Logging |
 | [nlohmann/json](https://github.com/nlohmann/json) | 3.x | MIT | Layout persistence *(Phase 4)* |
 
