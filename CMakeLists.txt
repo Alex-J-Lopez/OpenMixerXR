@@ -20,11 +20,12 @@ include(FetchContent)
 FetchContent_Declare(
     glm
     GIT_REPOSITORY https://github.com/g-truc/glm.git
-    GIT_TAG        0.9.9.8
+    GIT_TAG        1.0.1
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(glm)
-# GLM 0.9.9.8 exposes an INTERFACE target called "glm"; create alias for clarity
+# GLM 1.0.x exports glm::glm directly; for older versions that only expose "glm",
+# create the namespaced alias so downstream targets always use glm::glm.
 if(TARGET glm AND NOT TARGET glm::glm)
     add_library(glm::glm ALIAS glm)
 endif()
